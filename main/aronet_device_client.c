@@ -5,6 +5,7 @@
 
 #include "cJSON.h"
 #include "esp_event.h"
+#include "esp_attr.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -18,9 +19,11 @@ static bool wifi_connected;
 static bool network_initialized;
 
 typedef struct {
-    char data[4096];
+    char data[32768];
     size_t length;
 } http_response_t;
+
+static EXT_RAM_BSS_ATTR http_response_t s_response;
 
 static esp_err_t http_event_handler(esp_http_client_event_t *event)
 {
@@ -172,23 +175,21 @@ aronet_error_t aronet_update_device_status(const char *status)
 {
     char path[96];
     char body[96];
-    http_response_t response;
     snprintf(path, sizeof(path), "/devices/%s/status", configured_device_id);
     snprintf(body, sizeof(body), "{\"status\":\"%s\",\"wifi_signal\":%ld}",
              status, (long)wifi_rssi);
-    return request(path, HTTP_METHOD_POST, body, &response);
+    return request(path, HTTP_METHOD_POST, body, &s_response);
 }
 
 aronet_error_t aronet_get_next_job(aronet_job_t *job)
 {
     char path[96];
-    http_response_t response;
     snprintf(path, sizeof(path), "/devices/%s/status", configured_device_id);
-    aronet_error_t result = request(path, HTTP_METHOD_GET, NULL, &response);
+    aronet_error_t result = request(path, HTTP_METHOD_GET, NULL, &s_response);
     if (result != ARONET_OK) {
         return result;
     }
-    cJSON *root = cJSON_Parse(response.data);
+    cJSON *root = cJSON_Parse(s_response.data);
     cJSON *next_job = root ? cJSON_GetObjectItemCaseSensitive(root, "next_job") : NULL;
     result = parse_job(next_job, job);
     cJSON_Delete(root);
@@ -208,36 +209,32 @@ aronet_error_t aronet_assign_job(uint32_t job_id)
 {
     char path[64];
     char body[64];
-    http_response_t response;
     snprintf(path, sizeof(path), "/jobs/%lu/assign", (unsigned long)job_id);
     snprintf(body, sizeof(body), "{\"device_id\":\"%s\"}", configured_device_id);
-    return request(path, HTTP_METHOD_PUT, body, &response);
+    return request(path, HTTP_METHOD_PUT, body, &s_response);
 }
 
 aronet_error_t aronet_start_job(uint32_t job_id)
 {
     char path[64];
-    http_response_t response;
     snprintf(path, sizeof(path), "/jobs/%lu/start", (unsigned long)job_id);
-    return request(path, HTTP_METHOD_PUT, "{}", &response);
+    return request(path, HTTP_METHOD_PUT, "{}", &s_response);
 }
 
 aronet_error_t aronet_complete_job(uint32_t job_id)
 {
     char path[64];
     char body[64];
-    http_response_t response;
     snprintf(path, sizeof(path), "/jobs/%lu/complete", (unsigned long)job_id);
     snprintf(body, sizeof(body), "{\"device_id\":\"%s\"}", configured_device_id);
-    return request(path, HTTP_METHOD_PUT, body, &response);
+    return request(path, HTTP_METHOD_PUT, body, &s_response);
 }
 
 aronet_error_t aronet_pause_job(uint32_t job_id)
 {
     char path[64];
-    http_response_t response;
     snprintf(path, sizeof(path), "/jobs/%lu/pause", (unsigned long)job_id);
-    return request(path, HTTP_METHOD_PUT, "{}", &response);
+    return request(path, HTTP_METHOD_PUT, "{}", &s_response);
 }
 
 aronet_error_t aronet_get_jobs(const char *status, aronet_job_t *jobs, uint32_t max_jobs, uint32_t *count)
@@ -247,15 +244,14 @@ aronet_error_t aronet_get_jobs(const char *status, aronet_job_t *jobs, uint32_t 
     }
 
     char path[96];
-    http_response_t response;
     snprintf(path, sizeof(path), "/jobs%s%s%s", status ? "?status=" : "", status ? status : "",
-             status ? "&limit=8" : "?limit=8");
-    aronet_error_t result = request(path, HTTP_METHOD_GET, NULL, &response);
+             status ? "&limit=50" : "?limit=50");
+    aronet_error_t result = request(path, HTTP_METHOD_GET, NULL, &s_response);
     if (result != ARONET_OK) {
         return result;
     }
 
-    cJSON *root = cJSON_Parse(response.data);
+    cJSON *root = cJSON_Parse(s_response.data);
     if (!cJSON_IsArray(root)) {
         cJSON_Delete(root);
         return ARONET_ERR_JSON;

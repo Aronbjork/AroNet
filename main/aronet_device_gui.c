@@ -5,7 +5,7 @@
 #include "esp_log.h"
 
 #define POLL_INTERVAL_MS 3000
-#define MAX_QUEUE_JOBS 12
+#define MAX_QUEUE_JOBS 50
 
 static const char *TAG = "aronet_gui";
 
