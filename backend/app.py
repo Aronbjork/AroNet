@@ -472,10 +472,10 @@ def export_inventory_csv():
     conn.close()
 
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = csv.writer(output, delimiter=';')
     writer.writerow(['Artikelnummer', 'Artikelnamn', 'Inventerat antal', 'Enhet'])
     writer.writerows((part['part_number'], part['name'], part['quantity'], part['unit']) for part in parts)
-    return Response(output.getvalue(), mimetype='text/csv', headers={
+    return Response('\ufeff' + output.getvalue(), content_type='text/csv; charset=utf-8', headers={
         'Content-Disposition': 'attachment; filename=aronet-inventory.csv'
     })
 
