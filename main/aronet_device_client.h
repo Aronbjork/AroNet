@@ -38,6 +38,7 @@ typedef struct {
     uint32_t id;
     uint32_t product_id;
     uint32_t operation_id;
+    uint32_t quantity;
     char batch_number[64];
     char product_code[32];
     char product_name[128];
@@ -87,6 +88,9 @@ typedef enum {
  * @return ARONET_OK on success
  */
 aronet_error_t aronet_device_init(const char *server_ip, uint16_t port, const char *device_id);
+
+/** Connect the display to its configured Wi-Fi network. */
+aronet_error_t aronet_wifi_connect(const char *ssid, const char *password);
 
 /**
  * Deinitialize and cleanup

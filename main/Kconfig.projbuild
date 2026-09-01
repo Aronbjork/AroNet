@@ -1,0 +1,27 @@
+menu "AroNet Device Settings"
+
+config ARONET_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+    help
+        Wi-Fi network used by this display.
+
+config ARONET_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+    help
+        Wi-Fi password. This value is stored in the device sdkconfig and is not committed.
+
+config ARONET_SERVER_IP
+    string "AroNet server IP address"
+    default "10.0.40.122"
+    help
+        IPv4 address of the Raspberry Pi running AroNet.
+
+config ARONET_DEVICE_ID
+    string "Display device ID"
+    default "DISPLAY-01"
+    help
+        Stable identifier for this display in the AroNet job queue.
+
+endmenu

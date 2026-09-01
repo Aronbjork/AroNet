@@ -1,6 +1,8 @@
 idf_component_register(
     SRCS
         "main.c"
+        "aronet_device_client.c"
+        "aronet_device_gui.c"
         "display_driver.c"
         "display_init.c"
         "touch_driver.c"
@@ -14,4 +16,9 @@ idf_component_register(
         driver
         nvs_flash
         esp_psram
+        esp_http_client
+        esp_wifi
+        esp_event
+        esp_netif
+        cjson
 )
