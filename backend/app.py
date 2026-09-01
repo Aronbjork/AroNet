@@ -37,10 +37,10 @@ def create_part():
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute("""INSERT INTO parts (part_number, name, description, quantity, reorder_level, unit) 
-                     VALUES (?, ?, ?, ?, ?, ?)""",
-                  (data.get('part_number'), data.get('name'), data.get('description', ''),
-                   data.get('quantity', 0), data.get('reorder_level', 10), data.get('unit', 'pcs')))
+        c.execute("""INSERT INTO parts (part_number, name, description, quantity, unit)
+                 VALUES (?, ?, ?, ?, ?)""",
+              (data.get('part_number'), data.get('name'), data.get('description', ''),
+               data.get('quantity', 0), data.get('unit', 'pcs')))
         conn.commit()
         part_id = c.lastrowid
         conn.close()
@@ -478,6 +478,67 @@ def export_inventory_csv():
     return Response('\ufeff' + output.getvalue(), content_type='text/csv; charset=utf-8', headers={
         'Content-Disposition': 'attachment; filename=aronet-inventory.csv'
     })
+
+@app.route('/api/inventory/import.csv', methods=['POST'])
+def import_inventory_csv():
+    """Import an AroNet inventory CSV exported by this application."""
+    uploaded_file = request.files.get('file')
+    if not uploaded_file or not uploaded_file.filename:
+        return jsonify({'error': 'Choose a CSV file to import'}), 400
+
+    try:
+        content = uploaded_file.read().decode('utf-8-sig')
+        rows = list(csv.DictReader(io.StringIO(content), delimiter=';'))
+    except UnicodeDecodeError:
+        return jsonify({'error': 'CSV must be UTF-8 encoded'}), 400
+
+    required_fields = {'Artikelnummer', 'Artikelnamn', 'Inventerat antal', 'Enhet'}
+    if not rows or not required_fields.issubset(rows[0].keys()):
+        return jsonify({'error': 'CSV must use the exported AroNet inventory headers'}), 400
+
+    parsed_rows = []
+    for row_number, row in enumerate(rows, start=2):
+        part_number = (row.get('Artikelnummer') or '').strip()
+        name = (row.get('Artikelnamn') or '').strip()
+        unit = (row.get('Enhet') or '').strip() or 'pcs'
+        try:
+            quantity = int((row.get('Inventerat antal') or '').strip())
+        except ValueError:
+            return jsonify({'error': f'Row {row_number}: Inventerat antal must be a whole number'}), 400
+        if not part_number or not name or quantity < 0:
+            return jsonify({'error': f'Row {row_number}: article number, name, and a non-negative quantity are required'}), 400
+        parsed_rows.append((part_number, name, quantity, unit))
+
+    conn = get_db()
+    c = conn.cursor()
+    created = 0
+    updated = 0
+    try:
+        for part_number, name, quantity, unit in parsed_rows:
+            c.execute("SELECT id, quantity FROM parts WHERE part_number = ?", (part_number,))
+            existing_part = c.fetchone()
+            if existing_part:
+                c.execute("UPDATE parts SET name = ?, quantity = ?, unit = ? WHERE id = ?",
+                          (name, quantity, unit, existing_part['id']))
+                quantity_change = quantity - existing_part['quantity']
+                c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id)
+                             VALUES (?, 'csv_import', ?, 'CSV inventory import', 'dashboard')""",
+                          (existing_part['id'], quantity_change))
+                updated += 1
+            else:
+                c.execute("INSERT INTO parts (part_number, name, quantity, unit) VALUES (?, ?, ?, ?)",
+                          (part_number, name, quantity, unit))
+                c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id)
+                             VALUES (?, 'csv_import', ?, 'CSV inventory import', 'dashboard')""",
+                          (c.lastrowid, quantity))
+                created += 1
+        conn.commit()
+    except Exception as error:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': str(error)}), 400
+    conn.close()
+    return jsonify({'status': 'imported', 'created': created, 'updated': updated})
 
 @app.route('/api/dashboard/stats', methods=['GET'])
 def get_dashboard_stats():
