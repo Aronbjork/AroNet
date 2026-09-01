@@ -386,6 +386,7 @@
                             <th>Quantity</th>
                             <th>Reorder Level</th>
                             <th>Unit</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="parts-table">
@@ -424,6 +425,7 @@
                             <th>Name</th>
                             <th>Description</th>
                             <th>Est. Time (min)</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="operations-table">
@@ -506,10 +508,12 @@
                             <th>Product</th>
                             <th>Operation</th>
                             <th>Batch</th>
+                            <th>Quantity</th>
                             <th>Status</th>
                             <th>Device</th>
                             <th>Started</th>
                             <th>Completed</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="jobs-table">
@@ -545,6 +549,35 @@
             el.textContent = message;
             el.className = `message ${type}`;
             setTimeout(() => el.className = 'message', 4000);
+        }
+
+        async function deleteResource(path, tab, label, reload) {
+            if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
+
+            const response = await fetch(`${API_BASE}${path}`, { method: 'DELETE' });
+            if (response.ok) {
+                showMessage(tab, `${label} deleted`, 'success');
+                reload();
+            } else {
+                const error = await response.json();
+                showMessage(tab, `Error: ${error.error}`, 'error');
+            }
+        }
+
+        function deletePart(partId, partNumber) {
+            deleteResource(`/parts/${partId}`, 'parts', `part ${partNumber}`, loadParts);
+        }
+
+        function deleteOperation(operationId, name) {
+            deleteResource(`/operations/${operationId}`, 'operations', `operation ${name}`, loadOperations);
+        }
+
+        function deleteProduct(productId, productCode) {
+            deleteResource(`/products/${productId}`, 'products', `product ${productCode}`, loadProducts);
+        }
+
+        function deleteJob(jobId) {
+            deleteResource(`/jobs/${jobId}`, 'jobs', `job ${jobId}`, loadJobs);
         }
         
         // DASHBOARD
@@ -588,6 +621,7 @@
                     <td>${p.quantity}</td>
                     <td>${p.reorder_level}</td>
                     <td>${p.unit}</td>
+                    <td><button class="secondary" onclick="deletePart(${p.id}, '${p.part_number}')">Delete</button></td>
                 </tr>
             `).join('');
         }
@@ -625,6 +659,7 @@
                     <td><strong>${o.name}</strong></td>
                     <td>${o.description || '-'}</td>
                     <td>${o.estimated_time_minutes}</td>
+                    <td><button class="secondary" onclick="deleteOperation(${o.id}, '${o.name}')">Delete</button></td>
                 </tr>
             `).join('');
             
@@ -666,7 +701,7 @@
                     <td>${p.name}</td>
                     <td>${p.operations.map(o => o.name).join(' → ') || 'None'}</td>
                     <td>${p.parts.length}</td>
-                    <td><button onclick="createJobsForProduct(${p.id})">Create Jobs</button></td>
+                    <td><button class="secondary" onclick="deleteProduct(${p.id}, '${p.product_code}')">Delete</button></td>
                 </tr>
             `).join('');
             
@@ -714,10 +749,12 @@
                     <td>${j.product_code}</td>
                     <td>${j.operation_name}</td>
                     <td>${j.batch_number}</td>
+                    <td>${j.quantity}</td>
                     <td><span class="badge ${j.status}">${j.status}</span></td>
                     <td>${j.assigned_device_id || '-'}</td>
                     <td>${j.started_at ? new Date(j.started_at).toLocaleString() : '-'}</td>
                     <td>${j.completed_at ? new Date(j.completed_at).toLocaleString() : '-'}</td>
+                    <td><button class="secondary" onclick="deleteJob(${j.id})">Delete</button></td>
                 </tr>
             `).join('');
         }

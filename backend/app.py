@@ -61,6 +61,24 @@ def update_part(part_id):
     conn.close()
     return jsonify({'status': 'updated'})
 
+@app.route('/api/parts/<int:part_id>', methods=['DELETE'])
+def delete_part(part_id):
+    """Delete a part that is not part of a product."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM product_parts WHERE part_id = ?", (part_id,))
+    if c.fetchone()[0]:
+        conn.close()
+        return jsonify({'error': 'Remove this part from its products before deleting it'}), 409
+    c.execute("DELETE FROM audit_log WHERE part_id = ?", (part_id,))
+    c.execute("DELETE FROM parts WHERE id = ?", (part_id,))
+    if not c.rowcount:
+        conn.close()
+        return jsonify({'error': 'Part not found'}), 404
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'deleted'})
+
 # --- OPERATIONS ---
 @app.route('/api/operations', methods=['GET'])
 def get_operations():
@@ -89,6 +107,26 @@ def create_operation():
     except Exception as e:
         conn.close()
         return jsonify({'error': str(e)}), 400
+
+@app.route('/api/operations/<int:operation_id>', methods=['DELETE'])
+def delete_operation(operation_id):
+    """Delete an operation that is not in a product workflow or job queue."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM product_operations WHERE operation_id = ?", (operation_id,))
+    mapped_products = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM job_queue WHERE operation_id = ?", (operation_id,))
+    queued_jobs = c.fetchone()[0]
+    if mapped_products or queued_jobs:
+        conn.close()
+        return jsonify({'error': 'Remove this operation from products and delete its jobs before deleting it'}), 409
+    c.execute("DELETE FROM operations WHERE id = ?", (operation_id,))
+    if not c.rowcount:
+        conn.close()
+        return jsonify({'error': 'Operation not found'}), 404
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'deleted'})
 
 # --- PRODUCTS ---
 @app.route('/api/products', methods=['GET'])
@@ -145,6 +183,25 @@ def create_product():
         conn.close()
         return jsonify({'error': str(e)}), 400
 
+@app.route('/api/products/<int:product_id>', methods=['DELETE'])
+def delete_product(product_id):
+    """Delete a product and its definition links when it has no jobs."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM job_queue WHERE product_id = ?", (product_id,))
+    if c.fetchone()[0]:
+        conn.close()
+        return jsonify({'error': 'Delete this product\'s jobs before deleting the product'}), 409
+    c.execute("DELETE FROM product_operations WHERE product_id = ?", (product_id,))
+    c.execute("DELETE FROM product_parts WHERE product_id = ?", (product_id,))
+    c.execute("DELETE FROM products WHERE id = ?", (product_id,))
+    if not c.rowcount:
+        conn.close()
+        return jsonify({'error': 'Product not found'}), 404
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'deleted'})
+
 # --- JOB QUEUE ---
 @app.route('/api/jobs', methods=['GET'])
 def get_jobs():
@@ -183,6 +240,9 @@ def create_jobs():
     product_id = data.get('product_id')
     quantity = data.get('quantity', 1)
     batch_number = data.get('batch_number', f"BATCH-{datetime.now().strftime('%Y%m%d%H%M%S')}")
+
+    if not isinstance(quantity, int) or quantity < 1:
+        return jsonify({'error': 'Quantity must be a positive whole number'}), 400
     
     conn = get_db()
     c = conn.cursor()
@@ -192,15 +252,19 @@ def create_jobs():
                  JOIN product_operations po ON o.id = po.operation_id 
                  WHERE po.product_id = ? ORDER BY po.sequence_order""", (product_id,))
     operations = [row[0] for row in c.fetchall()]
-    
+
+    if not operations:
+        conn.close()
+        return jsonify({'error': 'The selected product has no operations'}), 400
+
     jobs_created = []
     try:
-        # Create jobs for each operation, for each unit
-        for unit in range(quantity):
-            for op_id in operations:
-                c.execute("""INSERT INTO job_queue (product_id, operation_id, batch_number, status) 
-                             VALUES (?, ?, ?, 'pending')""", (product_id, op_id, f"{batch_number}-{unit+1}"))
-                jobs_created.append(c.lastrowid)
+        for op_id in operations:
+            c.execute("""INSERT INTO job_queue
+                         (product_id, operation_id, batch_number, quantity, status)
+                         VALUES (?, ?, ?, ?, 'pending')""",
+                      (product_id, op_id, batch_number, quantity))
+            jobs_created.append(c.lastrowid)
         
         conn.commit()
         conn.close()
@@ -208,6 +272,19 @@ def create_jobs():
     except Exception as e:
         conn.close()
         return jsonify({'error': str(e)}), 400
+
+@app.route('/api/jobs/<int:job_id>', methods=['DELETE'])
+def delete_job(job_id):
+    """Delete a queued job."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM job_queue WHERE id = ?", (job_id,))
+    if not c.rowcount:
+        conn.close()
+        return jsonify({'error': 'Job not found'}), 404
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'deleted'})
 
 @app.route('/api/jobs/<int:job_id>/assign', methods=['PUT'])
 def assign_job(job_id):
@@ -241,20 +318,30 @@ def complete_job(job_id):
     
     try:
         # Get job details
-        c.execute("SELECT product_id FROM job_queue WHERE id = ?", (job_id,))
+        c.execute("SELECT product_id, operation_id, quantity, status FROM job_queue WHERE id = ?", (job_id,))
         job = c.fetchone()
-        product_id = job[0]
+        if not job:
+            conn.close()
+            return jsonify({'error': 'Job not found'}), 404
+        product_id, operation_id, job_quantity, job_status = job
         
         # Get parts for this product
         c.execute("""SELECT part_id, quantity_per_unit FROM product_parts WHERE product_id = ?""", (product_id,))
         parts = c.fetchall()
         
-        # Decrement inventory for each part
-        for part_id, qty_per_unit in parts:
-            c.execute("UPDATE parts SET quantity = quantity - ? WHERE id = ?", (qty_per_unit, part_id))
-            c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id) 
-                         VALUES (?, 'decrement', ?, 'Job completion', ?)""", 
-                      (part_id, -qty_per_unit, request.json.get('device_id', 'unknown')))
+        c.execute("SELECT MAX(sequence_order) FROM product_operations WHERE product_id = ?", (product_id,))
+        final_sequence = c.fetchone()[0]
+        c.execute("""SELECT sequence_order FROM product_operations
+                     WHERE product_id = ? AND operation_id = ?""", (product_id, operation_id))
+        operation_sequence = c.fetchone()[0]
+
+        if job_status != 'completed' and operation_sequence == final_sequence:
+            for part_id, qty_per_unit in parts:
+                quantity_used = qty_per_unit * job_quantity
+                c.execute("UPDATE parts SET quantity = quantity - ? WHERE id = ?", (quantity_used, part_id))
+                c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id)
+                             VALUES (?, 'decrement', ?, 'Job completion', ?)""",
+                          (part_id, -quantity_used, request.json.get('device_id', 'unknown')))
         
         # Mark job complete
         c.execute("UPDATE job_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", (job_id,))
@@ -287,7 +374,7 @@ def device_status(device_id):
     status = dict(c.fetchone() or {})
     
     # Get next pending job for this device
-    c.execute("""SELECT j.id, j.product_id, j.operation_id, j.batch_number, 
+    c.execute("""SELECT j.id, j.product_id, j.operation_id, j.batch_number, j.quantity,
                         p.product_code, o.name as operation_name
                  FROM job_queue j 
                  JOIN products p ON j.product_id = p.id 
