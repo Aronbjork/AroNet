@@ -119,32 +119,48 @@ def seed_demo_data():
     
     try:
         # Demo parts
-        c.execute("INSERT INTO parts (part_number, name, description, quantity, reorder_level) VALUES (?, ?, ?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO parts (part_number, name, description, quantity, reorder_level) VALUES (?, ?, ?, ?, ?)",
                   ("PN-MOTOR-01", "Motor 3HP", "3 Horsepower electric motor", 50, 5))
-        c.execute("INSERT INTO parts (part_number, name, description, quantity, reorder_level) VALUES (?, ?, ?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO parts (part_number, name, description, quantity, reorder_level) VALUES (?, ?, ?, ?, ?)",
                   ("PN-COMPRESSOR-01", "Compressor", "Industrial compressor unit", 20, 3))
-        c.execute("INSERT INTO parts (part_number, name, description, quantity, reorder_level) VALUES (?, ?, ?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO parts (part_number, name, description, quantity, reorder_level) VALUES (?, ?, ?, ?, ?)",
                   ("PN-STEEL-FRAME", "Steel Frame", "Main structural frame", 100, 10))
-        c.execute("INSERT INTO parts (part_number, name, description, quantity, reorder_level) VALUES (?, ?, ?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO parts (part_number, name, description, quantity, reorder_level) VALUES (?, ?, ?, ?, ?)",
                   ("PN-WIRING-KIT", "Wiring Kit", "Complete wiring harness", 80, 5))
         
         # Demo operations
-        c.execute("INSERT INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
                   ("Laser Cutting", "Cut metal components", 15))
-        c.execute("INSERT INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
                   ("Bending", "Bend steel components", 20))
-        c.execute("INSERT INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
                   ("Wiring", "Install electrical wiring", 30))
-        c.execute("INSERT INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
                   ("Assembly", "Assemble sub-assemblies", 45))
-        c.execute("INSERT INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
                   ("Final Assembly", "Final product assembly", 60))
-        c.execute("INSERT INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
                   ("Inspection", "Quality inspection", 20))
         
         # Demo product: CS20
-        c.execute("INSERT INTO products (product_code, name, quantity_to_build) VALUES (?, ?, ?)",
+        c.execute("INSERT OR IGNORE INTO products (product_code, name, quantity_to_build) VALUES (?, ?, ?)",
                   ("CS20", "CS20 Industrial Dehumidifier", 15))
+
+        c.execute("SELECT id FROM products WHERE product_code = ?", ("CS20",))
+        product_id = c.fetchone()[0]
+        c.execute("SELECT id FROM operations ORDER BY id")
+        operation_ids = [row[0] for row in c.fetchall()]
+        c.execute("SELECT id FROM parts ORDER BY id")
+        part_ids = [row[0] for row in c.fetchall()]
+
+        for sequence_order, operation_id in enumerate(operation_ids):
+            c.execute("""INSERT OR IGNORE INTO product_operations
+                         (product_id, operation_id, sequence_order) VALUES (?, ?, ?)""",
+                      (product_id, operation_id, sequence_order))
+        for part_id in part_ids:
+            c.execute("""INSERT OR IGNORE INTO product_parts
+                         (product_id, part_id, quantity_per_unit) VALUES (?, ?, 1)""",
+                      (product_id, part_id))
         
         conn.commit()
         print("✓ Demo data seeded successfully")
