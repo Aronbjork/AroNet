@@ -467,14 +467,15 @@ def export_inventory_csv():
     """Export the current inventory in a Fortnox-mappable CSV format."""
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT part_number, name, quantity, unit FROM parts ORDER BY part_number")
+    c.execute("SELECT part_number, name, description, quantity, unit FROM parts ORDER BY part_number")
     parts = c.fetchall()
     conn.close()
 
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';')
-    writer.writerow(['Artikelnummer', 'Artikelnamn', 'Inventerat antal', 'Enhet'])
-    writer.writerows((part['part_number'], part['name'], part['quantity'], part['unit']) for part in parts)
+    writer.writerow(['Artikelnummer', 'Artikelnamn', 'Beskrivning', 'Inventerat antal', 'Enhet'])
+    writer.writerows((part['part_number'], part['name'], part['description'] or '',
+                      part['quantity'], part['unit']) for part in parts)
     return Response('\ufeff' + output.getvalue(), content_type='text/csv; charset=utf-8', headers={
         'Content-Disposition': 'attachment; filename=aronet-inventory.csv'
     })
@@ -500,6 +501,7 @@ def import_inventory_csv():
     for row_number, row in enumerate(rows, start=2):
         part_number = (row.get('Artikelnummer') or '').strip()
         name = (row.get('Artikelnamn') or '').strip()
+        description = (row.get('Beskrivning') or '').strip()
         unit = (row.get('Enhet') or '').strip() or 'pcs'
         try:
             quantity = int((row.get('Inventerat antal') or '').strip())
@@ -507,27 +509,28 @@ def import_inventory_csv():
             return jsonify({'error': f'Row {row_number}: Inventerat antal must be a whole number'}), 400
         if not part_number or not name or quantity < 0:
             return jsonify({'error': f'Row {row_number}: article number, name, and a non-negative quantity are required'}), 400
-        parsed_rows.append((part_number, name, quantity, unit))
+        parsed_rows.append((part_number, name, description, quantity, unit))
 
     conn = get_db()
     c = conn.cursor()
     created = 0
     updated = 0
     try:
-        for part_number, name, quantity, unit in parsed_rows:
+        for part_number, name, description, quantity, unit in parsed_rows:
             c.execute("SELECT id, quantity FROM parts WHERE part_number = ?", (part_number,))
             existing_part = c.fetchone()
             if existing_part:
-                c.execute("UPDATE parts SET name = ?, quantity = ?, unit = ? WHERE id = ?",
-                          (name, quantity, unit, existing_part['id']))
+                c.execute("UPDATE parts SET name = ?, description = ?, quantity = ?, unit = ? WHERE id = ?",
+                          (name, description, quantity, unit, existing_part['id']))
                 quantity_change = quantity - existing_part['quantity']
                 c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id)
                              VALUES (?, 'csv_import', ?, 'CSV inventory import', 'dashboard')""",
                           (existing_part['id'], quantity_change))
                 updated += 1
             else:
-                c.execute("INSERT INTO parts (part_number, name, quantity, unit) VALUES (?, ?, ?, ?)",
-                          (part_number, name, quantity, unit))
+                c.execute("""INSERT INTO parts (part_number, name, description, quantity, unit)
+                             VALUES (?, ?, ?, ?, ?)""",
+                          (part_number, name, description, quantity, unit))
                 c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id)
                              VALUES (?, 'csv_import', ?, 'CSV inventory import', 'dashboard')""",
                           (c.lastrowid, quantity))
