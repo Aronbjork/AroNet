@@ -75,6 +75,7 @@ def init_db():
         product_id INTEGER NOT NULL,
         operation_id INTEGER NOT NULL,
         batch_number TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
         status TEXT DEFAULT 'pending',
         assigned_device_id TEXT,
         started_at TIMESTAMP,
@@ -83,6 +84,11 @@ def init_db():
         FOREIGN KEY (product_id) REFERENCES products(id),
         FOREIGN KEY (operation_id) REFERENCES operations(id)
     )''')
+
+    c.execute("PRAGMA table_info(job_queue)")
+    job_columns = {row[1] for row in c.fetchall()}
+    if 'quantity' not in job_columns:
+        c.execute("ALTER TABLE job_queue ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1")
     
     # Device Status
     c.execute('''CREATE TABLE IF NOT EXISTS device_status (
