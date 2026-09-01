@@ -1,7 +1,9 @@
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, Response, jsonify, request, render_template
 from flask_cors import CORS
 from database import init_db, seed_demo_data, get_db
 from datetime import datetime
+import csv
+import io
 import json
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -61,15 +63,38 @@ def update_part(part_id):
     conn.close()
     return jsonify({'status': 'updated'})
 
-@app.route('/api/parts/<int:part_id>', methods=['DELETE'])
-def delete_part(part_id):
-    """Delete a part that is not part of a product."""
+@app.route('/api/parts/<int:part_id>/adjust', methods=['POST'])
+def adjust_part_quantity(part_id):
+    """Add or trim stock while preserving an audit record."""
+    data = request.json or {}
+    quantity_change = data.get('quantity_change')
+    reason = data.get('reason', 'Manual adjustment')
+    if not isinstance(quantity_change, int) or quantity_change == 0:
+        return jsonify({'error': 'Quantity change must be a non-zero whole number'}), 400
+
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM product_parts WHERE part_id = ?", (part_id,))
-    if c.fetchone()[0]:
+    c.execute("""UPDATE parts SET quantity = quantity + ?
+                 WHERE id = ? AND quantity + ? >= 0""",
+              (quantity_change, part_id, quantity_change))
+    if not c.rowcount:
         conn.close()
-        return jsonify({'error': 'Remove this part from its products before deleting it'}), 409
+        return jsonify({'error': 'Part not found or adjustment would make stock negative'}), 400
+    c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id)
+                 VALUES (?, 'manual_adjustment', ?, ?, 'dashboard')""",
+              (part_id, quantity_change, reason))
+    c.execute("SELECT quantity FROM parts WHERE id = ?", (part_id,))
+    new_quantity = c.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'adjusted', 'quantity': new_quantity})
+
+@app.route('/api/parts/<int:part_id>', methods=['DELETE'])
+def delete_part(part_id):
+    """Delete a part and its historic product references."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM product_parts WHERE part_id = ?", (part_id,))
     c.execute("DELETE FROM audit_log WHERE part_id = ?", (part_id,))
     c.execute("DELETE FROM parts WHERE id = ?", (part_id,))
     if not c.rowcount:
@@ -345,37 +370,50 @@ def start_job(job_id):
 
 @app.route('/api/jobs/<int:job_id>/complete', methods=['PUT'])
 def complete_job(job_id):
-    """Complete a job and decrement inventory."""
+    """Complete a job and consume its bill of materials on final operation."""
     conn = get_db()
     c = conn.cursor()
     
     try:
-        # Get job details
         c.execute("SELECT product_id, operation_id, quantity, status FROM job_queue WHERE id = ?", (job_id,))
         job = c.fetchone()
         if not job:
             conn.close()
             return jsonify({'error': 'Job not found'}), 404
         product_id, operation_id, job_quantity, job_status = job
-        
-        # Get parts for this product
-        c.execute("""SELECT part_id, quantity_per_unit FROM product_parts WHERE product_id = ?""", (product_id,))
-        parts = c.fetchall()
-        
+        if job_status == 'completed':
+            conn.close()
+            return jsonify({'error': 'Job is already completed'}), 409
+
         c.execute("SELECT MAX(sequence_order) FROM product_operations WHERE product_id = ?", (product_id,))
         final_sequence = c.fetchone()[0]
         c.execute("""SELECT sequence_order FROM product_operations
                      WHERE product_id = ? AND operation_id = ?""", (product_id, operation_id))
-        operation_sequence = c.fetchone()[0]
+        operation = c.fetchone()
+        if not operation:
+            conn.close()
+            return jsonify({'error': 'Job operation is not part of its product workflow'}), 400
 
-        if job_status != 'completed' and operation_sequence == final_sequence:
-            for part_id, qty_per_unit in parts:
-                quantity_used = qty_per_unit * job_quantity
-                c.execute("UPDATE parts SET quantity = quantity - ? WHERE id = ?", (quantity_used, part_id))
+        if operation[0] == final_sequence:
+            c.execute("""SELECT p.id, p.name, p.quantity, pp.quantity_per_unit
+                         FROM parts p JOIN product_parts pp ON pp.part_id = p.id
+                         WHERE pp.product_id = ?""", (product_id,))
+            required_parts = c.fetchall()
+            shortages = [row['name'] for row in required_parts
+                         if row['quantity'] < row['quantity_per_unit'] * job_quantity]
+            if shortages:
+                conn.close()
+                return jsonify({'error': 'Insufficient stock: ' + ', '.join(shortages)}), 409
+
+            for part in required_parts:
+                used_quantity = part['quantity_per_unit'] * job_quantity
+                c.execute("UPDATE parts SET quantity = quantity - ? WHERE id = ?",
+                          (used_quantity, part['id']))
                 c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id)
-                             VALUES (?, 'decrement', ?, 'Job completion', ?)""",
-                          (part_id, -quantity_used, request.json.get('device_id', 'unknown')))
-        
+                             VALUES (?, 'production_consumption', ?, ?, ?)""",
+                          (part['id'], -used_quantity, f'Job {job_id} completed',
+                           (request.json or {}).get('device_id', 'dashboard')))
+
         # Mark job complete
         c.execute("UPDATE job_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", (job_id,))
         conn.commit()
@@ -423,6 +461,23 @@ def device_status(device_id):
 def dashboard():
     """Render web dashboard."""
     return render_template('dashboard.html')
+
+@app.route('/api/inventory/export.csv', methods=['GET'])
+def export_inventory_csv():
+    """Export the current inventory in a Fortnox-mappable CSV format."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT part_number, name, quantity, unit FROM parts ORDER BY part_number")
+    parts = c.fetchall()
+    conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Artikelnummer', 'Artikelnamn', 'Inventerat antal', 'Enhet'])
+    writer.writerows((part['part_number'], part['name'], part['quantity'], part['unit']) for part in parts)
+    return Response(output.getvalue(), mimetype='text/csv', headers={
+        'Content-Disposition': 'attachment; filename=aronet-inventory.csv'
+    })
 
 @app.route('/api/dashboard/stats', methods=['GET'])
 def get_dashboard_stats():

@@ -258,6 +258,14 @@
             flex: 1;
             min-width: 100px;
         }
+
+        .bom-row {
+            display: grid;
+            grid-template-columns: 1fr 110px auto;
+            gap: 10px;
+            align-items: center;
+            margin-top: 10px;
+        }
         
         @media (max-width: 768px) {
             .form-row {
@@ -279,6 +287,7 @@
         <header>
             <h1>🏭 AroNet Manufacturing System</h1>
             <p>Industrial Inventory & Production Management</p>
+            <p><a href="/api/inventory/export.csv">Export inventory CSV</a></p>
             
             <div class="nav-tabs">
                 <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
@@ -456,6 +465,15 @@
                         <select name="operation_ids" multiple size="5">
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label>Parts Required Per Product</label>
+                        <div class="bom-row">
+                            <select id="bom-part-select"></select>
+                            <input id="bom-part-quantity" type="number" min="1" value="1" aria-label="Quantity per product">
+                            <button id="add-bom-part" type="button">Add Part</button>
+                        </div>
+                        <div id="bom-parts-list"></div>
+                    </div>
                     <button type="submit">Add Product</button>
                 </form>
             </div>
@@ -579,6 +597,26 @@
         function deleteJob(jobId) {
             deleteResource(`/jobs/${jobId}`, 'jobs', `job ${jobId}`, loadJobs);
         }
+
+        async function adjustPart(partId, partNumber) {
+            const change = Number.parseInt(prompt(`Stock change for ${partNumber}. Use a positive value to add stock or negative to trim it.`, '0'), 10);
+            if (!Number.isInteger(change) || change === 0) return;
+            const reason = prompt('Reason for this adjustment:', 'Manual adjustment');
+            if (reason === null) return;
+
+            const response = await fetch(`${API_BASE}/parts/${partId}/adjust`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quantity_change: change, reason })
+            });
+            if (response.ok) {
+                showMessage('parts', `${partNumber} stock updated`, 'success');
+                loadParts();
+            } else {
+                const error = await response.json();
+                showMessage('parts', `Error: ${error.error}`, 'error');
+            }
+        }
         
         // DASHBOARD
         async function loadDashboard() {
@@ -621,9 +659,11 @@
                     <td>${p.quantity}</td>
                     <td>${p.reorder_level}</td>
                     <td>${p.unit}</td>
-                    <td><button class="secondary" onclick="deletePart(${p.id}, '${p.part_number}')">Delete</button></td>
+                    <td class="action-buttons"><button onclick="adjustPart(${p.id}, '${p.part_number}')">Adjust</button><button class="secondary" onclick="deletePart(${p.id}, '${p.part_number}')">Delete</button></td>
                 </tr>
             `).join('');
+            availableParts = parts;
+            renderBomPartOptions();
         }
         
         document.getElementById('add-part-form').addEventListener('submit', async (e) => {
@@ -700,7 +740,7 @@
                     <td><strong>${p.product_code}</strong></td>
                     <td>${p.name}</td>
                     <td>${p.operations.map(o => o.name).join(' → ') || 'None'}</td>
-                    <td>${p.parts.length}</td>
+                    <td>${p.parts.map(part => `${part.part_number} x${part.quantity_per_unit}`).join(', ') || 'None'}</td>
                     <td><button class="secondary" onclick="deleteProduct(${p.id}, '${p.product_code}')">Delete</button></td>
                 </tr>
             `).join('');
@@ -711,6 +751,37 @@
                                products.map(p => `<option value="${p.id}">${p.product_code} - ${p.name}</option>`).join('');
         }
         
+        let availableParts = [];
+        let bomParts = [];
+
+        function renderBomPartOptions() {
+            const select = document.getElementById('bom-part-select');
+            const selectedIds = new Set(bomParts.map(part => part.part_id));
+            select.innerHTML = '<option value="">Select part...</option>' + availableParts
+                .filter(part => !selectedIds.has(part.id))
+                .map(part => `<option value="${part.id}">${part.part_number} - ${part.name}</option>`).join('');
+        }
+
+        function renderBomParts() {
+            const list = document.getElementById('bom-parts-list');
+            list.innerHTML = bomParts.map(part => `<div class="bom-row"><span>${part.part_number} - ${part.name}</span><span>${part.quantity_per_unit} per unit</span><button type="button" class="secondary" onclick="removeBomPart(${part.part_id})">Remove</button></div>`).join('');
+            renderBomPartOptions();
+        }
+
+        function removeBomPart(partId) {
+            bomParts = bomParts.filter(part => part.part_id !== partId);
+            renderBomParts();
+        }
+
+        document.getElementById('add-bom-part').addEventListener('click', () => {
+            const partId = Number.parseInt(document.getElementById('bom-part-select').value, 10);
+            const quantity = Number.parseInt(document.getElementById('bom-part-quantity').value, 10);
+            const part = availableParts.find(item => item.id === partId);
+            if (!part || !Number.isInteger(quantity) || quantity < 1) return;
+            bomParts.push({ part_id: part.id, part_number: part.part_number, name: part.name, quantity_per_unit: quantity });
+            renderBomParts();
+        });
+
         document.getElementById('add-product-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
@@ -719,7 +790,7 @@
                 product_code: formData.get('product_code'),
                 name: formData.get('name'),
                 operation_ids: opIds,
-                parts: []
+                parts: bomParts.map(({ part_id, quantity_per_unit }) => ({ part_id, quantity_per_unit }))
             };
             
             const response = await fetch(`${API_BASE}/products`, {
@@ -731,6 +802,8 @@
             if (response.ok) {
                 showMessage('products', '✓ Product added successfully', 'success');
                 e.target.reset();
+                bomParts = [];
+                renderBomParts();
                 loadProducts();
             } else {
                 const error = await response.json();
@@ -786,6 +859,7 @@
         
         // Auto-load dashboard on startup
         loadDashboard();
+        loadParts();
         loadOperations();
         loadProducts();
     </script>
