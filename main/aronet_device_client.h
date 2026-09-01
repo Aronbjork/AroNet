@@ -31,6 +31,7 @@ typedef enum {
     JOB_STATUS_PENDING,
     JOB_STATUS_ASSIGNED,
     JOB_STATUS_IN_PROGRESS,
+    JOB_STATUS_PAUSED,
     JOB_STATUS_COMPLETED
 } job_status_t;
 
@@ -39,6 +40,7 @@ typedef struct {
     uint32_t product_id;
     uint32_t operation_id;
     uint32_t quantity;
+    uint32_t elapsed_seconds;
     char batch_number[64];
     char product_code[32];
     char product_name[128];
@@ -159,6 +161,9 @@ aronet_error_t aronet_start_job(uint32_t job_id);
  * @return ARONET_OK on success
  */
 aronet_error_t aronet_complete_job(uint32_t job_id);
+
+/** Return a queued or active job to the pending queue without deleting it. */
+aronet_error_t aronet_pause_job(uint32_t job_id);
 
 /**
  * Get jobs for this device (filtered by status)

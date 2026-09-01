@@ -222,7 +222,9 @@ def get_jobs():
     if device_id:
         query += " AND j.assigned_device_id = ?"
         params.append(device_id)
-    if status:
+    if status == 'available':
+        query += " AND j.status IN ('pending', 'paused')"
+    elif status:
         query += " AND j.status = ?"
         params.append(status)
     
@@ -286,6 +288,29 @@ def delete_job(job_id):
     conn.close()
     return jsonify({'status': 'deleted'})
 
+@app.route('/api/jobs/<int:job_id>/cancel', methods=['PUT'])
+def cancel_job(job_id):
+    """Legacy alias for pausing a job without deleting it."""
+    return pause_job(job_id)
+
+@app.route('/api/jobs/<int:job_id>/pause', methods=['PUT'])
+def pause_job(job_id):
+    """Pause an active job and preserve its accumulated work time."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""UPDATE job_queue
+                 SET status = 'paused', assigned_device_id = NULL,
+                     elapsed_seconds = elapsed_seconds + CAST(
+                         (julianday('now') - julianday(started_at)) * 86400 AS INTEGER),
+                     started_at = NULL
+                 WHERE id = ? AND status = 'in_progress'""", (job_id,))
+    if not c.rowcount:
+        conn.close()
+        return jsonify({'error': 'Only an in-progress job can be paused'}), 409
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'paused'})
+
 @app.route('/api/jobs/<int:job_id>/assign', methods=['PUT'])
 def assign_job(job_id):
     """Assign job to a device."""
@@ -305,7 +330,11 @@ def start_job(job_id):
     """Start a job."""
     conn = get_db()
     c = conn.cursor()
-    c.execute("UPDATE job_queue SET status = 'in_progress', started_at = CURRENT_TIMESTAMP WHERE id = ?", (job_id,))
+    c.execute("""UPDATE job_queue SET status = 'in_progress', started_at = CURRENT_TIMESTAMP
+                 WHERE id = ? AND status IN ('pending', 'paused', 'assigned')""", (job_id,))
+    if not c.rowcount:
+        conn.close()
+        return jsonify({'error': 'Job not found or cannot be started'}), 409
     conn.commit()
     conn.close()
     return jsonify({'status': 'started'})

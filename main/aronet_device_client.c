@@ -104,9 +104,19 @@ static aronet_error_t parse_job(cJSON *json, aronet_job_t *job)
     cJSON *product_id = cJSON_GetObjectItemCaseSensitive(json, "product_id");
     cJSON *operation_id = cJSON_GetObjectItemCaseSensitive(json, "operation_id");
     cJSON *quantity = cJSON_GetObjectItemCaseSensitive(json, "quantity");
+    cJSON *elapsed_seconds = cJSON_GetObjectItemCaseSensitive(json, "elapsed_seconds");
     job->product_id = cJSON_IsNumber(product_id) ? product_id->valueint : 0;
     job->operation_id = cJSON_IsNumber(operation_id) ? operation_id->valueint : 0;
     job->quantity = cJSON_IsNumber(quantity) ? quantity->valueint : 1;
+    job->elapsed_seconds = cJSON_IsNumber(elapsed_seconds) ? elapsed_seconds->valueint : 0;
+    cJSON *status = cJSON_GetObjectItemCaseSensitive(json, "status");
+    if (cJSON_IsString(status) && strcmp(status->valuestring, "paused") == 0) {
+        job->status = JOB_STATUS_PAUSED;
+    } else if (cJSON_IsString(status) && strcmp(status->valuestring, "in_progress") == 0) {
+        job->status = JOB_STATUS_IN_PROGRESS;
+    } else {
+        job->status = JOB_STATUS_PENDING;
+    }
     copy_json_string(json, "batch_number", job->batch_number, sizeof(job->batch_number));
     copy_json_string(json, "product_code", job->product_code, sizeof(job->product_code));
     copy_json_string(json, "product_name", job->product_name, sizeof(job->product_name));
@@ -222,13 +232,46 @@ aronet_error_t aronet_complete_job(uint32_t job_id)
     return request(path, HTTP_METHOD_PUT, body, &response);
 }
 
+aronet_error_t aronet_pause_job(uint32_t job_id)
+{
+    char path[64];
+    http_response_t response;
+    snprintf(path, sizeof(path), "/jobs/%lu/pause", (unsigned long)job_id);
+    return request(path, HTTP_METHOD_PUT, "{}", &response);
+}
+
 aronet_error_t aronet_get_jobs(const char *status, aronet_job_t *jobs, uint32_t max_jobs, uint32_t *count)
 {
-    (void)status;
-    (void)jobs;
-    (void)max_jobs;
-    if (count) *count = 0;
-    return ARONET_ERR_NOT_FOUND;
+    if (!jobs || !count || max_jobs == 0) {
+        return ARONET_ERR_MEMORY;
+    }
+
+    char path[96];
+    http_response_t response;
+    snprintf(path, sizeof(path), "/jobs%s%s", status ? "?status=" : "", status ? status : "");
+    aronet_error_t result = request(path, HTTP_METHOD_GET, NULL, &response);
+    if (result != ARONET_OK) {
+        return result;
+    }
+
+    cJSON *root = cJSON_Parse(response.data);
+    if (!cJSON_IsArray(root)) {
+        cJSON_Delete(root);
+        return ARONET_ERR_JSON;
+    }
+    uint32_t job_count = 0;
+    cJSON *item = NULL;
+    cJSON_ArrayForEach(item, root) {
+        if (job_count >= max_jobs) {
+            break;
+        }
+        if (parse_job(item, &jobs[job_count]) == ARONET_OK) {
+            job_count++;
+        }
+    }
+    cJSON_Delete(root);
+    *count = job_count;
+    return job_count ? ARONET_OK : ARONET_ERR_NOT_FOUND;
 }
 
 aronet_error_t aronet_get_parts(aronet_part_t *parts, uint32_t max_parts, uint32_t *count)

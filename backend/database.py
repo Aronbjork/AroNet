@@ -78,6 +78,7 @@ def init_db():
         quantity INTEGER NOT NULL DEFAULT 1,
         status TEXT DEFAULT 'pending',
         assigned_device_id TEXT,
+        elapsed_seconds INTEGER NOT NULL DEFAULT 0,
         started_at TIMESTAMP,
         completed_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -89,6 +90,8 @@ def init_db():
     job_columns = {row[1] for row in c.fetchall()}
     if 'quantity' not in job_columns:
         c.execute("ALTER TABLE job_queue ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1")
+    if 'elapsed_seconds' not in job_columns:
+        c.execute("ALTER TABLE job_queue ADD COLUMN elapsed_seconds INTEGER NOT NULL DEFAULT 0")
     
     # Device Status
     c.execute('''CREATE TABLE IF NOT EXISTS device_status (
