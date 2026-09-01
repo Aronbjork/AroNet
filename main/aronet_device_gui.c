@@ -33,7 +33,6 @@ static aronet_part_t current_part;
 static uint32_t last_poll_ms;
 static uint32_t active_tab_index;
 static lv_obj_t *adjust_spinbox;
-static lv_obj_t *number_keyboard;
 static lv_font_t swedish_font_18;
 static lv_font_t swedish_font_20;
 static lv_font_t swedish_font_24;
@@ -207,33 +206,6 @@ static void spinbox_decrement_event(lv_event_t *event)
     }
 }
 
-static void keyboard_event(lv_event_t *event)
-{
-    if (lv_event_get_code(event) == LV_EVENT_READY || lv_event_get_code(event) == LV_EVENT_CANCEL) {
-        lv_obj_del(number_keyboard);
-        number_keyboard = NULL;
-    }
-}
-
-static void open_number_keyboard_event(lv_event_t *event)
-{
-    (void)event;
-    if (number_keyboard) {
-        return;
-    }
-    number_keyboard = lv_keyboard_create(lv_screen_active());
-    lv_keyboard_set_mode(number_keyboard, LV_KEYBOARD_MODE_NUMBER);
-    lv_keyboard_set_textarea(number_keyboard, adjust_spinbox);
-    lv_obj_set_size(number_keyboard, 800, 230);
-    lv_obj_set_pos(number_keyboard, 0, 250);
-    lv_obj_set_style_bg_color(number_keyboard, lv_color_hex(0x050505), LV_PART_MAIN);
-    lv_obj_set_style_text_color(number_keyboard, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(number_keyboard, lv_color_hex(0x202020), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(number_keyboard, lv_color_hex(0xFFFFFF), LV_PART_ITEMS);
-    lv_obj_add_event_cb(number_keyboard, keyboard_event, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(number_keyboard, keyboard_event, LV_EVENT_CANCEL, NULL);
-}
-
 static void inventory_part_event(lv_event_t *event)
 {
     current_part = *(aronet_part_t *)lv_event_get_user_data(event);
@@ -251,7 +223,6 @@ static void inventory_part_event(lv_event_t *event)
     lv_obj_set_size(adjust_spinbox, 180, 56);
     lv_obj_set_pos(adjust_spinbox, 36, 330);
     lv_obj_set_style_text_font(adjust_spinbox, &swedish_font_20, LV_PART_MAIN);
-    lv_obj_add_event_cb(adjust_spinbox, open_number_keyboard_event, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *increase_button = lv_btn_create(lv_screen_active());
     lv_obj_set_size(increase_button, 68, 56);
