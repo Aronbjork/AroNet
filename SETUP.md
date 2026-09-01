@@ -153,6 +153,41 @@ When ready to deploy to RPi:
    aronet_device_setup("DISPLAY-01", "192.168.1.X");  // RPi IP
    ```
 
+## Start AroNet Automatically on Raspberry Pi
+
+The included systemd service starts AroNet after the Pi has network access and restarts it if it exits.
+
+1. Update the checkout and install the production server:
+   ```bash
+   cd ~/AroNet
+   git pull
+   cd backend
+   source venv/bin/activate
+   pip install -r requirements.txt
+   deactivate
+   ```
+
+2. Install and enable the service:
+   ```bash
+   sudo cp ~/AroNet/deploy/aronet.service /etc/systemd/system/aronet.service
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now aronet.service
+   ```
+
+3. Verify it is running:
+   ```bash
+   sudo systemctl status aronet.service
+   curl http://127.0.0.1:5000/api/dashboard/stats
+   ```
+
+Useful commands:
+
+```bash
+sudo systemctl restart aronet.service
+sudo systemctl stop aronet.service
+sudo journalctl -u aronet.service -f
+```
+
 ## Troubleshooting
 
 ### Backend won't start

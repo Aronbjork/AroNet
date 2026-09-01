@@ -1,0 +1,17 @@
+[Unit]
+Description=AroNet manufacturing server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aronet
+Group=aronet
+WorkingDirectory=/home/aronet/AroNet/backend
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/aronet/AroNet/backend/venv/bin/gunicorn --workers 1 --bind 0.0.0.0:5000 app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
