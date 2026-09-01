@@ -13,7 +13,7 @@
 static const char *TAG = "display";
 
 static esp_lcd_panel_handle_t g_panel_handle = NULL;
-static uint32_t s_vsync_count = 0;
+static lv_display_t *s_lvgl_display = NULL;
 
 // Display buffer configuration
 #define EXAMPLE_LCD_NUM_FB           1
@@ -338,14 +338,15 @@ static void display_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uin
 {
     esp_lcd_panel_handle_t panel_handle = lv_display_get_user_data(disp);
     esp_lcd_panel_draw_bitmap(panel_handle, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
-    lv_display_flush_ready(disp);
 }
 
 static bool display_notify_lvgl_flush_ready(esp_lcd_panel_handle_t panel,
                                             const esp_lcd_rgb_panel_event_data_t *event_data,
                                             void *user_ctx)
 {
-    s_vsync_count++;
+    if (s_lvgl_display) {
+        lv_display_flush_ready(s_lvgl_display);
+    }
     return false;
 }
 
@@ -364,6 +365,7 @@ lv_display_t *display_init_lvgl(esp_lcd_panel_handle_t panel_handle)
 
     lv_display_set_user_data(display, panel_handle);
     lv_display_set_color_format(display, EXAMPLE_LV_COLOR_FORMAT);
+    s_lvgl_display = display;
 
     size_t draw_buffer_sz = DISPLAY_H_RES * EXAMPLE_LVGL_DRAW_BUF_LINES * EXAMPLE_PIXEL_SIZE;
     ESP_LOGI(TAG, "Allocating LVGL draw buffers: %zu bytes each", draw_buffer_sz);
@@ -385,7 +387,7 @@ lv_display_t *display_init_lvgl(esp_lcd_panel_handle_t panel_handle)
     lv_display_set_flush_cb(display, display_lvgl_flush_cb);
 
     esp_lcd_rgb_panel_event_callbacks_t cbs = {
-        .on_vsync = display_notify_lvgl_flush_ready,
+        .on_color_trans_done = display_notify_lvgl_flush_ready,
     };
     ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(panel_handle, &cbs, NULL));
 
