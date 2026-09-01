@@ -33,6 +33,7 @@ static aronet_part_t current_part;
 static uint32_t last_poll_ms;
 static uint32_t active_tab_index;
 static lv_obj_t *adjust_spinbox;
+static lv_obj_t *number_keyboard;
 static lv_font_t swedish_font_18;
 static lv_font_t swedish_font_20;
 static lv_font_t swedish_font_24;
@@ -56,6 +57,22 @@ static void add_button_label(lv_obj_t *button, const char *text)
     lv_obj_t *label = lv_label_create(button);
     lv_label_set_text(label, text);
     lv_obj_center(label);
+}
+
+static void style_list(lv_obj_t *list)
+{
+    lv_obj_set_style_bg_color(list, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(list, lv_color_hex(0x303030), LV_PART_MAIN);
+    lv_obj_set_style_text_color(list, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+}
+
+static void style_list_row(lv_obj_t *row)
+{
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x111111), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(row, lv_color_hex(0x242424), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(row, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_border_color(row, lv_color_hex(0x303030), LV_PART_MAIN);
 }
 
 static void init_swedish_fonts(void)
@@ -174,14 +191,47 @@ static void adjust_part_event(lv_event_t *event)
 
 static void spinbox_increment_event(lv_event_t *event)
 {
-    (void)event;
-    lv_spinbox_increment(adjust_spinbox);
+    if (lv_event_get_code(event) == LV_EVENT_SHORT_CLICKED) {
+        lv_spinbox_increment(adjust_spinbox);
+    } else if (lv_event_get_code(event) == LV_EVENT_LONG_PRESSED_REPEAT) {
+        lv_spinbox_set_value(adjust_spinbox, lv_spinbox_get_value(adjust_spinbox) + 10);
+    }
 }
 
 static void spinbox_decrement_event(lv_event_t *event)
 {
+    if (lv_event_get_code(event) == LV_EVENT_SHORT_CLICKED) {
+        lv_spinbox_decrement(adjust_spinbox);
+    } else if (lv_event_get_code(event) == LV_EVENT_LONG_PRESSED_REPEAT) {
+        lv_spinbox_set_value(adjust_spinbox, lv_spinbox_get_value(adjust_spinbox) - 10);
+    }
+}
+
+static void keyboard_event(lv_event_t *event)
+{
+    if (lv_event_get_code(event) == LV_EVENT_READY || lv_event_get_code(event) == LV_EVENT_CANCEL) {
+        lv_obj_del(number_keyboard);
+        number_keyboard = NULL;
+    }
+}
+
+static void open_number_keyboard_event(lv_event_t *event)
+{
     (void)event;
-    lv_spinbox_decrement(adjust_spinbox);
+    if (number_keyboard) {
+        return;
+    }
+    number_keyboard = lv_keyboard_create(lv_screen_active());
+    lv_keyboard_set_mode(number_keyboard, LV_KEYBOARD_MODE_NUMBER);
+    lv_keyboard_set_textarea(number_keyboard, adjust_spinbox);
+    lv_obj_set_size(number_keyboard, 800, 230);
+    lv_obj_set_pos(number_keyboard, 0, 250);
+    lv_obj_set_style_bg_color(number_keyboard, lv_color_hex(0x050505), LV_PART_MAIN);
+    lv_obj_set_style_text_color(number_keyboard, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(number_keyboard, lv_color_hex(0x202020), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(number_keyboard, lv_color_hex(0xFFFFFF), LV_PART_ITEMS);
+    lv_obj_add_event_cb(number_keyboard, keyboard_event, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(number_keyboard, keyboard_event, LV_EVENT_CANCEL, NULL);
 }
 
 static void inventory_part_event(lv_event_t *event)
@@ -201,17 +251,18 @@ static void inventory_part_event(lv_event_t *event)
     lv_obj_set_size(adjust_spinbox, 180, 56);
     lv_obj_set_pos(adjust_spinbox, 36, 330);
     lv_obj_set_style_text_font(adjust_spinbox, &swedish_font_20, LV_PART_MAIN);
+    lv_obj_add_event_cb(adjust_spinbox, open_number_keyboard_event, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *increase_button = lv_btn_create(lv_screen_active());
     lv_obj_set_size(increase_button, 68, 56);
     lv_obj_set_pos(increase_button, 228, 330);
-    lv_obj_add_event_cb(increase_button, spinbox_increment_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(increase_button, spinbox_increment_event, LV_EVENT_ALL, NULL);
     add_button_label(increase_button, "+");
 
     lv_obj_t *decrease_button = lv_btn_create(lv_screen_active());
     lv_obj_set_size(decrease_button, 68, 56);
     lv_obj_set_pos(decrease_button, 308, 330);
-    lv_obj_add_event_cb(decrease_button, spinbox_decrement_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(decrease_button, spinbox_decrement_event, LV_EVENT_ALL, NULL);
     add_button_label(decrease_button, "-");
 
     lv_obj_t *add_button = lv_btn_create(lv_screen_active());
@@ -301,13 +352,29 @@ static void show_queue(uint32_t tab_index)
 
     lv_obj_t *tabview = lv_tabview_create(screen);
     lv_obj_set_size(tabview, 800, 480);
+    lv_obj_set_style_bg_color(tabview, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(tabview, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_add_event_cb(tabview, tab_changed_event, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_t *jobs_tab = lv_tabview_add_tab(tabview, "Jobs");
     lv_obj_t *inventory_tab = lv_tabview_add_tab(tabview, "Inventory");
+    lv_obj_set_style_bg_color(jobs_tab, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(jobs_tab, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(inventory_tab, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(inventory_tab, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_t *tab_bar = lv_tabview_get_tab_bar(tabview);
+    lv_obj_set_style_bg_color(tab_bar, lv_color_hex(0x080808), LV_PART_MAIN);
+    lv_obj_set_style_text_color(tab_bar, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    for (uint32_t index = 0; index < lv_obj_get_child_count(tab_bar); index++) {
+        lv_obj_t *tab_button = lv_obj_get_child(tab_bar, index);
+        lv_obj_set_style_bg_color(tab_button, lv_color_hex(0x080808), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(tab_button, lv_color_hex(0x242424), LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(tab_button, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    }
 
     lv_obj_t *list = lv_list_create(jobs_tab);
     lv_obj_set_size(list, 744, 350);
     lv_obj_center(list);
+    style_list(list);
     for (uint32_t index = 0; index < queue_job_count; index++) {
         char text[256];
         snprintf(text, sizeof(text), "%.31s | %.63s | %lu pcs\n%.63s | %s | %lum elapsed",
@@ -316,6 +383,7 @@ static void show_queue(uint32_t tab_index)
                  queue_jobs[index].status == JOB_STATUS_PAUSED ? "Paused" : "Pending",
              (unsigned long)(queue_jobs[index].elapsed_seconds / 60));
         lv_obj_t *button = lv_list_add_button(list, NULL, text);
+        style_list_row(button);
         lv_obj_add_event_cb(button, queue_event, LV_EVENT_CLICKED, &queue_jobs[index]);
     }
 
@@ -326,12 +394,14 @@ static void show_queue(uint32_t tab_index)
     lv_obj_t *inventory_list = lv_list_create(inventory_tab);
     lv_obj_set_size(inventory_list, 744, 350);
     lv_obj_center(inventory_list);
+    style_list(inventory_list);
     for (uint32_t index = 0; index < inventory_part_count; index++) {
         char text[128];
         snprintf(text, sizeof(text), "%.31s | %.63s\nIn stock: %lu %s",
                  inventory_parts[index].part_number, inventory_parts[index].name,
                  (unsigned long)inventory_parts[index].quantity, inventory_parts[index].unit);
         lv_obj_t *button = lv_list_add_button(inventory_list, NULL, text);
+        style_list_row(button);
         lv_obj_add_event_cb(button, inventory_part_event, LV_EVENT_CLICKED, &inventory_parts[index]);
     }
     if (!inventory_part_count) {
