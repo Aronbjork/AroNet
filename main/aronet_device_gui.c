@@ -33,12 +33,12 @@ static lv_font_t swedish_font_26;
 static lv_font_t swedish_font_32;
 
 static const char *const idle_messages[] = {
-    "God och glad kexchoklad",
-    "Det är aldrig för sent att ge upp",
-    "En sak i taget, det blir klart till slut",
-    "Bra jobb börjar med en bra paus",
-    "Lugn och metodisk vinner dagen",
-    "Nästa jobb väntar när du är redo",
+    "Good and happy chocolate biscuit",
+    "It is never too late to give up",
+    "One thing at a time, it will get done",
+    "Good work starts with a good break",
+    "Calm and methodical wins the day",
+    "The next job waits when you are ready",
 };
 
 static void show_queue(void);
@@ -90,15 +90,15 @@ static void show_idle(void)
 {
     size_t message_count = sizeof(idle_messages) / sizeof(idle_messages[0]);
     const char *message = idle_messages[esp_random() % message_count];
-    show_screen("Redo för arbete", message, 0x65C466);
+    show_screen("Ready for work", message, 0x65C466);
 }
 
 static void show_error(aronet_error_t error)
 {
     char detail[128];
-    snprintf(detail, sizeof(detail), "Serveranslutning: %s\nDisplayen försöker igen automatiskt.",
+    snprintf(detail, sizeof(detail), "Server connection: %s\nThe display will retry automatically.",
              aronet_error_string(error));
-    show_screen("Anslutningsproblem", detail, 0xE76F51);
+    show_screen("Connection problem", detail, 0xE76F51);
 }
 
 static void complete_job_event(lv_event_t *event)
@@ -142,12 +142,12 @@ static void queue_event(lv_event_t *event)
     ui_state = UI_JOB_DETAILS;
 
     char detail[400];
-    snprintf(detail, sizeof(detail), "Produkt: %.31s\n%.127s\nOperation: %.63s\nBatch: %.63s\nAntal: %lu\nTid hittills: %lum %lus",
+    snprintf(detail, sizeof(detail), "Product: %.31s\n%.127s\nOperation: %.63s\nBatch: %.63s\nQuantity: %lu\nPrevious time: %lum %lus",
              current_job.product_code, current_job.product_name, current_job.operation_name,
              current_job.batch_number, (unsigned long)current_job.quantity,
              (unsigned long)(current_job.elapsed_seconds / 60),
              (unsigned long)(current_job.elapsed_seconds % 60));
-    show_screen("Jobbdetaljer", detail, 0xF4B942);
+    show_screen("Job details", detail, 0xF4B942);
 
     lv_obj_t *start_button = lv_btn_create(lv_screen_active());
     lv_obj_set_size(start_button, 220, 68);
@@ -155,7 +155,7 @@ static void queue_event(lv_event_t *event)
     lv_obj_set_style_bg_color(start_button, lv_color_hex(0x2E9E62), LV_PART_MAIN);
     lv_obj_add_event_cb(start_button, start_job_event, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label = lv_label_create(start_button);
-    lv_label_set_text(label, "STARTA");
+    lv_label_set_text(label, "START");
     lv_obj_center(label);
 
     lv_obj_t *back_button = lv_btn_create(lv_screen_active());
@@ -164,7 +164,7 @@ static void queue_event(lv_event_t *event)
     lv_obj_set_style_bg_color(back_button, lv_color_hex(0x4D648D), LV_PART_MAIN);
     lv_obj_add_event_cb(back_button, back_to_queue_event, LV_EVENT_CLICKED, NULL);
     label = lv_label_create(back_button);
-    lv_label_set_text(label, "TILLBAKA TILL KÖN");
+    lv_label_set_text(label, "BACK TO QUEUE");
     lv_obj_center(label);
 }
 
@@ -189,7 +189,7 @@ static void show_queue(void)
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 
     lv_obj_t *title = lv_label_create(screen);
-    lv_label_set_text_fmt(title, "AroNet Kö (%lu)", (unsigned long)queue_job_count);
+    lv_label_set_text_fmt(title, "AroNet Queue (%lu)", (unsigned long)queue_job_count);
     lv_obj_set_style_text_font(title, &swedish_font_26, LV_PART_MAIN);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_pos(title, 28, 20);
@@ -199,10 +199,10 @@ static void show_queue(void)
     lv_obj_set_pos(list, 28, 76);
     for (uint32_t index = 0; index < queue_job_count; index++) {
         char text[256];
-        snprintf(text, sizeof(text), "%.31s | %.63s | %lu st\n%.63s | %s | %lum hittills",
+        snprintf(text, sizeof(text), "%.31s | %.63s | %lu pcs\n%.63s | %s | %lum elapsed",
                  queue_jobs[index].product_code, queue_jobs[index].operation_name,
              (unsigned long)queue_jobs[index].quantity, queue_jobs[index].batch_number,
-                 queue_jobs[index].status == JOB_STATUS_PAUSED ? "Pausad" : "Väntar",
+                 queue_jobs[index].status == JOB_STATUS_PAUSED ? "Paused" : "Pending",
              (unsigned long)(queue_jobs[index].elapsed_seconds / 60));
         lv_obj_t *button = lv_list_add_button(list, NULL, text);
         lv_obj_add_event_cb(button, queue_event, LV_EVENT_CLICKED, &queue_jobs[index]);
@@ -226,14 +226,14 @@ static void start_job_event(lv_event_t *event)
 
     aronet_update_device_status("working");
     ui_state = UI_JOB_RUNNING;
-    show_screen("Jobb pågår", current_job.operation_name, 0x5AA9E6);
+    show_screen("Job in progress", current_job.operation_name, 0x5AA9E6);
     lv_obj_t *button = lv_btn_create(lv_screen_active());
     lv_obj_set_size(button, 320, 76);
     lv_obj_align(button, LV_ALIGN_BOTTOM_MID, 0, -42);
     lv_obj_set_style_bg_color(button, lv_color_hex(0x2E9E62), LV_PART_MAIN);
     lv_obj_add_event_cb(button, complete_job_event, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label = lv_label_create(button);
-    lv_label_set_text(label, "SLUTFÖR JOBB");
+    lv_label_set_text(label, "COMPLETE JOB");
     lv_obj_set_style_text_font(label, &swedish_font_20, LV_PART_MAIN);
     lv_obj_center(label);
 
@@ -243,7 +243,7 @@ static void start_job_event(lv_event_t *event)
     lv_obj_set_style_bg_color(cancel_button, lv_color_hex(0xC94C4C), LV_PART_MAIN);
     lv_obj_add_event_cb(cancel_button, pause_job_event, LV_EVENT_CLICKED, NULL);
     label = lv_label_create(cancel_button);
-    lv_label_set_text(label, "PAUSA JOBB");
+    lv_label_set_text(label, "PAUSE JOB");
     lv_obj_center(label);
 }
 
@@ -251,7 +251,7 @@ void aronet_gui_init(void)
 {
     init_swedish_fonts();
     ui_state = UI_CONNECTING;
-    show_screen("Ansluter", "Ansluter till Wi-Fi och AroNet-servern.", 0xF4B942);
+    show_screen("Connecting", "Joining Wi-Fi and contacting the AroNet server.", 0xF4B942);
     ESP_LOGI(TAG, "Connection screen rendered");
 }
 
@@ -265,7 +265,7 @@ void aronet_gui_tick(void)
     if (!aronet_is_connected()) {
         if (ui_state != UI_CONNECTING) {
             ui_state = UI_CONNECTING;
-            show_screen("Ansluter", "Väntar på Wi-Fi-anslutning.", 0xF4B942);
+            show_screen("Connecting", "Waiting for the Wi-Fi connection.", 0xF4B942);
         }
         return;
     }
