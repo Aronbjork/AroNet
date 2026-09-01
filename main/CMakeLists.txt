@@ -8,9 +8,11 @@ idf_component_register(
         "touch_driver.c"
         "hw_version.c"
         "screen_orientation.c"
+        "../managed_components/lvgl__lvgl/demos/multilang/assets/fonts/font_multilang_small.c"
     INCLUDE_DIRS
         "."
     REQUIRES
+        lvgl__lvgl
         esp_lcd
         esp_timer
         driver

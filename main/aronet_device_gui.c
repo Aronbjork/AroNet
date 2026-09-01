@@ -10,6 +10,8 @@
 
 static const char *TAG = "aronet_gui";
 
+extern const lv_font_t font_multilang_small;
+
 typedef enum {
     UI_CONNECTING,
     UI_IDLE,
@@ -24,6 +26,11 @@ static aronet_job_t current_job;
 static aronet_job_t queue_jobs[MAX_QUEUE_JOBS];
 static uint32_t queue_job_count;
 static uint32_t last_poll_ms;
+static lv_font_t swedish_font_18;
+static lv_font_t swedish_font_20;
+static lv_font_t swedish_font_24;
+static lv_font_t swedish_font_26;
+static lv_font_t swedish_font_32;
 
 static const char *const idle_messages[] = {
     "God och glad kexchoklad",
@@ -37,6 +44,20 @@ static const char *const idle_messages[] = {
 static void show_queue(void);
 static void start_job_event(lv_event_t *event);
 
+static void init_swedish_fonts(void)
+{
+    swedish_font_18 = lv_font_montserrat_18;
+    swedish_font_20 = lv_font_montserrat_20;
+    swedish_font_24 = lv_font_montserrat_24;
+    swedish_font_26 = lv_font_montserrat_26;
+    swedish_font_32 = lv_font_montserrat_32;
+    swedish_font_18.fallback = &font_multilang_small;
+    swedish_font_20.fallback = &font_multilang_small;
+    swedish_font_24.fallback = &font_multilang_small;
+    swedish_font_26.fallback = &font_multilang_small;
+    swedish_font_32.fallback = &font_multilang_small;
+}
+
 static void show_screen(const char *headline, const char *detail, uint32_t color)
 {
     lv_obj_t *screen = lv_screen_active();
@@ -46,19 +67,19 @@ static void show_screen(const char *headline, const char *detail, uint32_t color
 
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "AroNet");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_set_style_text_font(title, &swedish_font_32, LV_PART_MAIN);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_pos(title, 36, 26);
 
     lv_obj_t *status = lv_label_create(screen);
     lv_label_set_text(status, headline);
-    lv_obj_set_style_text_font(status, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_font(status, &swedish_font_24, LV_PART_MAIN);
     lv_obj_set_style_text_color(status, lv_color_hex(color), LV_PART_MAIN);
     lv_obj_set_pos(status, 36, 100);
 
     lv_obj_t *description = lv_label_create(screen);
     lv_label_set_text(description, detail);
-    lv_obj_set_style_text_font(description, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(description, &swedish_font_18, LV_PART_MAIN);
     lv_obj_set_style_text_color(description, lv_color_hex(0xD9E2F3), LV_PART_MAIN);
     lv_obj_set_width(description, 720);
     lv_obj_set_pos(description, 36, 155);
@@ -169,7 +190,7 @@ static void show_queue(void)
 
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text_fmt(title, "AroNet Kö (%lu)", (unsigned long)queue_job_count);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_26, LV_PART_MAIN);
+    lv_obj_set_style_text_font(title, &swedish_font_26, LV_PART_MAIN);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_pos(title, 28, 20);
 
@@ -213,7 +234,7 @@ static void start_job_event(lv_event_t *event)
     lv_obj_add_event_cb(button, complete_job_event, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label = lv_label_create(button);
     lv_label_set_text(label, "SLUTFÖR JOBB");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, &swedish_font_20, LV_PART_MAIN);
     lv_obj_center(label);
 
     lv_obj_t *cancel_button = lv_btn_create(lv_screen_active());
@@ -228,6 +249,7 @@ static void start_job_event(lv_event_t *event)
 
 void aronet_gui_init(void)
 {
+    init_swedish_fonts();
     ui_state = UI_CONNECTING;
     show_screen("Ansluter", "Ansluter till Wi-Fi och AroNet-servern.", 0xF4B942);
     ESP_LOGI(TAG, "Connection screen rendered");
