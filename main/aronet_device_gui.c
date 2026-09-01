@@ -18,6 +18,7 @@ typedef enum {
     UI_IDLE,
     UI_QUEUE,
     UI_JOB_DETAILS,
+    UI_INVENTORY_DETAILS,
     UI_JOB_RUNNING,
     UI_ERROR,
 } ui_state_t;
@@ -30,6 +31,8 @@ static aronet_part_t inventory_parts[MAX_INVENTORY_PARTS];
 static uint32_t inventory_part_count;
 static aronet_part_t current_part;
 static uint32_t last_poll_ms;
+static uint32_t active_tab_index;
+static lv_obj_t *adjust_spinbox;
 static lv_font_t swedish_font_18;
 static lv_font_t swedish_font_20;
 static lv_font_t swedish_font_24;
@@ -45,7 +48,7 @@ static const char *const idle_messages[] = {
     "The next job waits when you are ready",
 };
 
-static void show_queue(void);
+static void show_queue(uint32_t tab_index);
 static void start_job_event(lv_event_t *event);
 
 static void add_button_label(lv_obj_t *button, const char *text)
@@ -97,11 +100,21 @@ static void show_screen(const char *headline, const char *detail, uint32_t color
     lv_obj_invalidate(screen);
 }
 
-static void show_idle(void)
+static void show_idle_content(lv_obj_t *parent)
 {
     size_t message_count = sizeof(idle_messages) / sizeof(idle_messages[0]);
     const char *message = idle_messages[esp_random() % message_count];
-    show_screen("Ready for work", message, 0x65C466);
+
+    lv_obj_t *headline = lv_label_create(parent);
+    lv_label_set_text(headline, "Ready for work");
+    lv_obj_set_style_text_font(headline, &swedish_font_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(headline, lv_color_hex(0x65C466), LV_PART_MAIN);
+    lv_obj_align(headline, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_t *detail = lv_label_create(parent);
+    lv_label_set_text(detail, message);
+    lv_obj_set_style_text_font(detail, &swedish_font_18, LV_PART_MAIN);
+    lv_obj_set_style_text_color(detail, lv_color_hex(0xD9E2F3), LV_PART_MAIN);
+    lv_obj_align(detail, LV_ALIGN_CENTER, 0, 24);
 }
 
 static void show_error(aronet_error_t error)
@@ -118,9 +131,8 @@ static void complete_job_event(lv_event_t *event)
     aronet_error_t result = aronet_complete_job(current_job.id);
     if (result == ARONET_OK) {
         aronet_update_device_status("idle");
-        ui_state = UI_IDLE;
-        show_idle();
         last_poll_ms = 0;
+        show_queue(0);
     } else {
         ui_state = UI_ERROR;
         show_error(result);
@@ -134,7 +146,7 @@ static void pause_job_event(lv_event_t *event)
     if (result == ARONET_OK) {
         aronet_update_device_status("idle");
         last_poll_ms = 0;
-        show_queue();
+        show_queue(0);
     } else {
         ui_state = UI_ERROR;
         show_error(result);
@@ -143,51 +155,84 @@ static void pause_job_event(lv_event_t *event)
 
 static void back_to_queue_event(lv_event_t *event)
 {
-    (void)event;
-    show_queue();
+    show_queue((uint32_t)(intptr_t)lv_event_get_user_data(event));
 }
 
 static void adjust_part_event(lv_event_t *event)
 {
-    int32_t change = (int32_t)(intptr_t)lv_event_get_user_data(event);
+    int32_t amount = lv_spinbox_get_value(adjust_spinbox);
+    int32_t change = (int32_t)(intptr_t)lv_event_get_user_data(event) * amount;
     aronet_error_t result = aronet_adjust_part(current_part.id, change, "Display stock adjustment");
     if (result == ARONET_OK) {
         current_part.quantity += change;
-        show_queue();
+        show_queue(1);
     } else {
         ui_state = UI_ERROR;
         show_error(result);
     }
 }
 
+static void spinbox_increment_event(lv_event_t *event)
+{
+    (void)event;
+    lv_spinbox_increment(adjust_spinbox);
+}
+
+static void spinbox_decrement_event(lv_event_t *event)
+{
+    (void)event;
+    lv_spinbox_decrement(adjust_spinbox);
+}
+
 static void inventory_part_event(lv_event_t *event)
 {
     current_part = *(aronet_part_t *)lv_event_get_user_data(event);
+    ui_state = UI_INVENTORY_DETAILS;
     char detail[512];
     snprintf(detail, sizeof(detail), "Part number: %.31s\nName: %.63s\nDescription: %.255s\nIn stock: %lu %.15s",
              current_part.part_number, current_part.name, current_part.description,
              (unsigned long)current_part.quantity, current_part.unit);
     show_screen("Adjust inventory", detail, 0x5AA9E6);
 
+    adjust_spinbox = lv_spinbox_create(lv_screen_active());
+    lv_spinbox_set_range(adjust_spinbox, 1, 99999);
+    lv_spinbox_set_digit_format(adjust_spinbox, 5, 0);
+    lv_spinbox_set_value(adjust_spinbox, 1);
+    lv_obj_set_size(adjust_spinbox, 180, 56);
+    lv_obj_set_pos(adjust_spinbox, 36, 330);
+    lv_obj_set_style_text_font(adjust_spinbox, &swedish_font_20, LV_PART_MAIN);
+
+    lv_obj_t *increase_button = lv_btn_create(lv_screen_active());
+    lv_obj_set_size(increase_button, 68, 56);
+    lv_obj_set_pos(increase_button, 228, 330);
+    lv_obj_add_event_cb(increase_button, spinbox_increment_event, LV_EVENT_CLICKED, NULL);
+    add_button_label(increase_button, "+");
+
+    lv_obj_t *decrease_button = lv_btn_create(lv_screen_active());
+    lv_obj_set_size(decrease_button, 68, 56);
+    lv_obj_set_pos(decrease_button, 308, 330);
+    lv_obj_add_event_cb(decrease_button, spinbox_decrement_event, LV_EVENT_CLICKED, NULL);
+    add_button_label(decrease_button, "-");
+
     lv_obj_t *add_button = lv_btn_create(lv_screen_active());
-    lv_obj_set_size(add_button, 180, 68);
-    lv_obj_set_pos(add_button, 36, 370);
+    lv_obj_set_size(add_button, 180, 62);
+    lv_obj_set_pos(add_button, 36, 398);
     lv_obj_set_style_bg_color(add_button, lv_color_hex(0x2E9E62), LV_PART_MAIN);
     lv_obj_add_event_cb(add_button, adjust_part_event, LV_EVENT_CLICKED, (void *)(intptr_t)1);
-    add_button_label(add_button, "+1 STOCK");
+    add_button_label(add_button, "ADD STOCK");
 
     lv_obj_t *trim_button = lv_btn_create(lv_screen_active());
-    lv_obj_set_size(trim_button, 180, 68);
-    lv_obj_set_pos(trim_button, 238, 370);
+    lv_obj_set_size(trim_button, 180, 62);
+    lv_obj_set_pos(trim_button, 238, 398);
     lv_obj_set_style_bg_color(trim_button, lv_color_hex(0xC94C4C), LV_PART_MAIN);
     lv_obj_add_event_cb(trim_button, adjust_part_event, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
-    add_button_label(trim_button, "-1 STOCK");
+    add_button_label(trim_button, "DEDUCT STOCK");
 
     lv_obj_t *back_button = lv_btn_create(lv_screen_active());
     lv_obj_set_size(back_button, 220, 68);
-    lv_obj_set_pos(back_button, 440, 370);
+    lv_obj_set_pos(back_button, 440, 398);
     lv_obj_set_style_bg_color(back_button, lv_color_hex(0x4D648D), LV_PART_MAIN);
-    lv_obj_add_event_cb(back_button, back_to_queue_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(back_button, back_to_queue_event, LV_EVENT_CLICKED, (void *)(intptr_t)1);
     add_button_label(back_button, "BACK");
 }
 
@@ -217,13 +262,18 @@ static void queue_event(lv_event_t *event)
     lv_obj_set_size(back_button, 220, 68);
     lv_obj_set_pos(back_button, 290, 370);
     lv_obj_set_style_bg_color(back_button, lv_color_hex(0x4D648D), LV_PART_MAIN);
-    lv_obj_add_event_cb(back_button, back_to_queue_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(back_button, back_to_queue_event, LV_EVENT_CLICKED, (void *)(intptr_t)0);
     label = lv_label_create(back_button);
     lv_label_set_text(label, "BACK TO QUEUE");
     lv_obj_center(label);
 }
 
-static void show_queue(void)
+static void tab_changed_event(lv_event_t *event)
+{
+    active_tab_index = lv_tabview_get_tab_active(lv_event_get_target(event));
+}
+
+static void show_queue(uint32_t tab_index)
 {
     aronet_error_t jobs_result = aronet_get_jobs("available", queue_jobs, MAX_QUEUE_JOBS, &queue_job_count);
     if (jobs_result == ARONET_ERR_NOT_FOUND) {
@@ -251,6 +301,7 @@ static void show_queue(void)
 
     lv_obj_t *tabview = lv_tabview_create(screen);
     lv_obj_set_size(tabview, 800, 480);
+    lv_obj_add_event_cb(tabview, tab_changed_event, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_t *jobs_tab = lv_tabview_add_tab(tabview, "Jobs");
     lv_obj_t *inventory_tab = lv_tabview_add_tab(tabview, "Inventory");
 
@@ -269,9 +320,7 @@ static void show_queue(void)
     }
 
     if (!queue_job_count) {
-        lv_obj_t *empty_label = lv_label_create(jobs_tab);
-        lv_label_set_text(empty_label, "No jobs available");
-        lv_obj_center(empty_label);
+        show_idle_content(jobs_tab);
     }
 
     lv_obj_t *inventory_list = lv_list_create(inventory_tab);
@@ -290,6 +339,9 @@ static void show_queue(void)
         lv_label_set_text(empty_label, "No inventory parts found");
         lv_obj_center(empty_label);
     }
+
+    active_tab_index = tab_index;
+    lv_tabview_set_active(tabview, active_tab_index, LV_ANIM_OFF);
 
     lv_obj_invalidate(screen);
     ESP_LOGI(TAG, "Displaying %lu jobs and %lu inventory parts", (unsigned long)queue_job_count,
@@ -343,7 +395,8 @@ void aronet_gui_init(void)
 void aronet_gui_tick(void)
 {
     uint32_t now = lv_tick_get();
-    if (ui_state == UI_JOB_DETAILS || ui_state == UI_JOB_RUNNING || now - last_poll_ms < POLL_INTERVAL_MS) {
+    if (ui_state == UI_JOB_DETAILS || ui_state == UI_INVENTORY_DETAILS ||
+        ui_state == UI_JOB_RUNNING || now - last_poll_ms < POLL_INTERVAL_MS) {
         return;
     }
     last_poll_ms = now;
@@ -357,9 +410,9 @@ void aronet_gui_tick(void)
 
     aronet_error_t result = aronet_get_jobs("available", queue_jobs, MAX_QUEUE_JOBS, &queue_job_count);
     if (result == ARONET_OK) {
-        show_queue();
+        show_queue(active_tab_index);
     } else if (result == ARONET_ERR_NOT_FOUND) {
-        show_queue();
+        show_queue(active_tab_index);
     } else {
         ui_state = UI_ERROR;
         show_error(result);
