@@ -52,22 +52,16 @@ void app_main(void)
     ESP_ERROR_CHECK(aronet_device_init(ARONET_SERVER_IP, 5000, ARONET_DEVICE_ID) == ARONET_OK
                     ? ESP_OK : ESP_FAIL);
 
-    lv_lock();
     aronet_gui_init();
-    lv_unlock();
 
     ESP_LOGI(TAG, "System ready");
 
     // Main LVGL loop
     bool first_frame_handled = false;
     while (1) {
-        lv_lock();
         aronet_gui_tick();
-        lv_unlock();
 
-        lv_lock();
         uint32_t time_till_next = lv_timer_handler();
-        lv_unlock();
 
         if (!first_frame_handled) {
             ESP_LOGI(TAG, "First LVGL frame handled");
