@@ -1,0 +1,6 @@
+#pragma once
+
+#define ARONET_WIFI_SSID "Ex"
+#define ARONET_WIFI_PASSWORD "Ex"
+#define ARONET_SERVER_IP "10.0.40.122"
+#define ARONET_DEVICE_ID "DISPLAY-01"

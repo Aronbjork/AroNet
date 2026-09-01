@@ -7,6 +7,7 @@
 #include "lvgl.h"
 #include "display_init.h"
 #include "aronet_config.h"
+#include "aronet_device_config.h"
 #include "aronet_device_client.h"
 #include "aronet_device_gui.h"
 
@@ -44,11 +45,11 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_timer_create(&tick_timer_args, &tick_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(tick_timer, UI_LVGL_TICK_PERIOD_MS * 1000));
 
-    ret = aronet_wifi_connect(CONFIG_ARONET_WIFI_SSID, CONFIG_ARONET_WIFI_PASSWORD);
+    ret = aronet_wifi_connect(ARONET_WIFI_SSID, ARONET_WIFI_PASSWORD);
     if (ret != ARONET_OK) {
-        ESP_LOGW(TAG, "Wi-Fi is not configured; open menuconfig before deploying");
+        ESP_LOGW(TAG, "Wi-Fi is not configured; update aronet_device_config.h before deploying");
     }
-    ESP_ERROR_CHECK(aronet_device_init(CONFIG_ARONET_SERVER_IP, 5000, CONFIG_ARONET_DEVICE_ID) == ARONET_OK
+    ESP_ERROR_CHECK(aronet_device_init(ARONET_SERVER_IP, 5000, ARONET_DEVICE_ID) == ARONET_OK
                     ? ESP_OK : ESP_FAIL);
 
     lv_lock();
