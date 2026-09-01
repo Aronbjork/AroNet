@@ -18,7 +18,7 @@ static bool wifi_connected;
 static bool network_initialized;
 
 typedef struct {
-    char data[2048];
+    char data[4096];
     size_t length;
 } http_response_t;
 
@@ -248,7 +248,8 @@ aronet_error_t aronet_get_jobs(const char *status, aronet_job_t *jobs, uint32_t 
 
     char path[96];
     http_response_t response;
-    snprintf(path, sizeof(path), "/jobs%s%s", status ? "?status=" : "", status ? status : "");
+    snprintf(path, sizeof(path), "/jobs%s%s%s", status ? "?status=" : "", status ? status : "",
+             status ? "&limit=8" : "?limit=8");
     aronet_error_t result = request(path, HTTP_METHOD_GET, NULL, &response);
     if (result != ARONET_OK) {
         return result;

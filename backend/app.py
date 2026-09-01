@@ -208,6 +208,7 @@ def get_jobs():
     """Get job queue (with optional filtering by device or status)."""
     device_id = request.args.get('device_id')
     status = request.args.get('status')
+    limit = request.args.get('limit', type=int)
     
     conn = get_db()
     c = conn.cursor()
@@ -229,6 +230,9 @@ def get_jobs():
         params.append(status)
     
     query += " ORDER BY j.created_at"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(max(1, min(limit, 50)))
     
     c.execute(query, params)
     jobs = [dict(row) for row in c.fetchall()]
