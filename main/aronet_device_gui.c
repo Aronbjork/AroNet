@@ -2,8 +2,11 @@
 #include "aronet_device_gui.h"
 #include "lvgl.h"
 #include "display_init.h"
+#include "esp_log.h"
 
 #define POLL_INTERVAL_MS 3000
+
+static const char *TAG = "aronet_gui";
 
 typedef enum {
     UI_CONNECTING,
@@ -22,6 +25,7 @@ static void show_screen(const char *headline, const char *detail, uint32_t color
     lv_obj_t *screen = lv_screen_active();
     lv_obj_clean(screen);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x14213D), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "AroNet");
@@ -41,6 +45,7 @@ static void show_screen(const char *headline, const char *detail, uint32_t color
     lv_obj_set_style_text_color(description, lv_color_hex(0xD9E2F3), LV_PART_MAIN);
     lv_obj_set_width(description, 720);
     lv_obj_set_pos(description, 36, 155);
+    lv_obj_invalidate(screen);
 }
 
 static void show_idle(void)
@@ -121,6 +126,7 @@ void aronet_gui_init(void)
 {
     ui_state = UI_CONNECTING;
     show_screen("Connecting", "Joining Wi-Fi and contacting the AroNet server.", 0xF4B942);
+    ESP_LOGI(TAG, "Connection screen rendered");
 }
 
 void aronet_gui_tick(void)
@@ -144,13 +150,17 @@ void aronet_gui_tick(void)
         current_job = next_job;
         ui_state = UI_JOB_READY;
         show_job();
+        ESP_LOGI(TAG, "Displaying job %lu: %s", (unsigned long)current_job.id,
+                 current_job.operation_name);
     } else if (result == ARONET_ERR_NOT_FOUND) {
         if (ui_state != UI_IDLE) {
             ui_state = UI_IDLE;
             show_idle();
+            ESP_LOGI(TAG, "No pending job; displaying idle screen");
         }
     } else {
         ui_state = UI_ERROR;
         show_error(result);
+        ESP_LOGW(TAG, "Job request failed: %s", aronet_error_string(result));
     }
 }
