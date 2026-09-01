@@ -7,6 +7,7 @@
 
 #define POLL_INTERVAL_MS 3000
 #define MAX_QUEUE_JOBS 50
+#define MAX_INVENTORY_PARTS 50
 
 static const char *TAG = "aronet_gui";
 
@@ -25,6 +26,9 @@ static ui_state_t ui_state;
 static aronet_job_t current_job;
 static aronet_job_t queue_jobs[MAX_QUEUE_JOBS];
 static uint32_t queue_job_count;
+static aronet_part_t inventory_parts[MAX_INVENTORY_PARTS];
+static uint32_t inventory_part_count;
+static aronet_part_t current_part;
 static uint32_t last_poll_ms;
 static lv_font_t swedish_font_18;
 static lv_font_t swedish_font_20;
@@ -43,6 +47,13 @@ static const char *const idle_messages[] = {
 
 static void show_queue(void);
 static void start_job_event(lv_event_t *event);
+
+static void add_button_label(lv_obj_t *button, const char *text)
+{
+    lv_obj_t *label = lv_label_create(button);
+    lv_label_set_text(label, text);
+    lv_obj_center(label);
+}
 
 static void init_swedish_fonts(void)
 {
@@ -136,6 +147,50 @@ static void back_to_queue_event(lv_event_t *event)
     show_queue();
 }
 
+static void adjust_part_event(lv_event_t *event)
+{
+    int32_t change = (int32_t)(intptr_t)lv_event_get_user_data(event);
+    aronet_error_t result = aronet_adjust_part(current_part.id, change, "Display stock adjustment");
+    if (result == ARONET_OK) {
+        current_part.quantity += change;
+        show_queue();
+    } else {
+        ui_state = UI_ERROR;
+        show_error(result);
+    }
+}
+
+static void inventory_part_event(lv_event_t *event)
+{
+    current_part = *(aronet_part_t *)lv_event_get_user_data(event);
+    char detail[512];
+    snprintf(detail, sizeof(detail), "Part number: %.31s\nName: %.63s\nDescription: %.255s\nIn stock: %lu %.15s",
+             current_part.part_number, current_part.name, current_part.description,
+             (unsigned long)current_part.quantity, current_part.unit);
+    show_screen("Adjust inventory", detail, 0x5AA9E6);
+
+    lv_obj_t *add_button = lv_btn_create(lv_screen_active());
+    lv_obj_set_size(add_button, 180, 68);
+    lv_obj_set_pos(add_button, 36, 370);
+    lv_obj_set_style_bg_color(add_button, lv_color_hex(0x2E9E62), LV_PART_MAIN);
+    lv_obj_add_event_cb(add_button, adjust_part_event, LV_EVENT_CLICKED, (void *)(intptr_t)1);
+    add_button_label(add_button, "+1 STOCK");
+
+    lv_obj_t *trim_button = lv_btn_create(lv_screen_active());
+    lv_obj_set_size(trim_button, 180, 68);
+    lv_obj_set_pos(trim_button, 238, 370);
+    lv_obj_set_style_bg_color(trim_button, lv_color_hex(0xC94C4C), LV_PART_MAIN);
+    lv_obj_add_event_cb(trim_button, adjust_part_event, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
+    add_button_label(trim_button, "-1 STOCK");
+
+    lv_obj_t *back_button = lv_btn_create(lv_screen_active());
+    lv_obj_set_size(back_button, 220, 68);
+    lv_obj_set_pos(back_button, 440, 370);
+    lv_obj_set_style_bg_color(back_button, lv_color_hex(0x4D648D), LV_PART_MAIN);
+    lv_obj_add_event_cb(back_button, back_to_queue_event, LV_EVENT_CLICKED, NULL);
+    add_button_label(back_button, "BACK");
+}
+
 static void queue_event(lv_event_t *event)
 {
     current_job = *(aronet_job_t *)lv_event_get_user_data(event);
@@ -170,15 +225,21 @@ static void queue_event(lv_event_t *event)
 
 static void show_queue(void)
 {
-    aronet_error_t result = aronet_get_jobs("available", queue_jobs, MAX_QUEUE_JOBS, &queue_job_count);
-    if (result == ARONET_ERR_NOT_FOUND) {
-        ui_state = UI_IDLE;
-        show_idle();
+    aronet_error_t jobs_result = aronet_get_jobs("available", queue_jobs, MAX_QUEUE_JOBS, &queue_job_count);
+    if (jobs_result == ARONET_ERR_NOT_FOUND) {
+        queue_job_count = 0;
+    } else if (jobs_result != ARONET_OK) {
+        ui_state = UI_ERROR;
+        show_error(jobs_result);
         return;
     }
-    if (result != ARONET_OK) {
+    aronet_error_t parts_result = aronet_get_parts(inventory_parts, MAX_INVENTORY_PARTS,
+                                                   &inventory_part_count);
+    if (parts_result == ARONET_ERR_NOT_FOUND) {
+        inventory_part_count = 0;
+    } else if (parts_result != ARONET_OK) {
         ui_state = UI_ERROR;
-        show_error(result);
+        show_error(parts_result);
         return;
     }
 
@@ -188,15 +249,14 @@ static void show_queue(void)
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x14213D), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 
-    lv_obj_t *title = lv_label_create(screen);
-    lv_label_set_text_fmt(title, "AroNet Queue (%lu)", (unsigned long)queue_job_count);
-    lv_obj_set_style_text_font(title, &swedish_font_26, LV_PART_MAIN);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_pos(title, 28, 20);
+    lv_obj_t *tabview = lv_tabview_create(screen);
+    lv_obj_set_size(tabview, 800, 480);
+    lv_obj_t *jobs_tab = lv_tabview_add_tab(tabview, "Jobs");
+    lv_obj_t *inventory_tab = lv_tabview_add_tab(tabview, "Inventory");
 
-    lv_obj_t *list = lv_list_create(screen);
-    lv_obj_set_size(list, 744, 388);
-    lv_obj_set_pos(list, 28, 76);
+    lv_obj_t *list = lv_list_create(jobs_tab);
+    lv_obj_set_size(list, 744, 350);
+    lv_obj_center(list);
     for (uint32_t index = 0; index < queue_job_count; index++) {
         char text[256];
         snprintf(text, sizeof(text), "%.31s | %.63s | %lu pcs\n%.63s | %s | %lum elapsed",
@@ -207,8 +267,33 @@ static void show_queue(void)
         lv_obj_t *button = lv_list_add_button(list, NULL, text);
         lv_obj_add_event_cb(button, queue_event, LV_EVENT_CLICKED, &queue_jobs[index]);
     }
+
+    if (!queue_job_count) {
+        lv_obj_t *empty_label = lv_label_create(jobs_tab);
+        lv_label_set_text(empty_label, "No jobs available");
+        lv_obj_center(empty_label);
+    }
+
+    lv_obj_t *inventory_list = lv_list_create(inventory_tab);
+    lv_obj_set_size(inventory_list, 744, 350);
+    lv_obj_center(inventory_list);
+    for (uint32_t index = 0; index < inventory_part_count; index++) {
+        char text[128];
+        snprintf(text, sizeof(text), "%.31s | %.63s\nIn stock: %lu %s",
+                 inventory_parts[index].part_number, inventory_parts[index].name,
+                 (unsigned long)inventory_parts[index].quantity, inventory_parts[index].unit);
+        lv_obj_t *button = lv_list_add_button(inventory_list, NULL, text);
+        lv_obj_add_event_cb(button, inventory_part_event, LV_EVENT_CLICKED, &inventory_parts[index]);
+    }
+    if (!inventory_part_count) {
+        lv_obj_t *empty_label = lv_label_create(inventory_tab);
+        lv_label_set_text(empty_label, "No inventory parts found");
+        lv_obj_center(empty_label);
+    }
+
     lv_obj_invalidate(screen);
-    ESP_LOGI(TAG, "Displaying %lu queued jobs", (unsigned long)queue_job_count);
+    ESP_LOGI(TAG, "Displaying %lu jobs and %lu inventory parts", (unsigned long)queue_job_count,
+             (unsigned long)inventory_part_count);
 }
 
 static void start_job_event(lv_event_t *event)
@@ -274,11 +359,7 @@ void aronet_gui_tick(void)
     if (result == ARONET_OK) {
         show_queue();
     } else if (result == ARONET_ERR_NOT_FOUND) {
-        if (ui_state != UI_IDLE) {
-            ui_state = UI_IDLE;
-            show_idle();
-            ESP_LOGI(TAG, "No pending job; displaying idle screen");
-        }
+        show_queue();
     } else {
         ui_state = UI_ERROR;
         show_error(result);

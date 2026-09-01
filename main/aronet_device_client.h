@@ -188,6 +188,9 @@ aronet_error_t aronet_get_jobs(const char *status, aronet_job_t *jobs, uint32_t 
  */
 aronet_error_t aronet_get_parts(aronet_part_t *parts, uint32_t max_parts, uint32_t *count);
 
+/** Apply a positive or negative manual stock adjustment to a part. */
+aronet_error_t aronet_adjust_part(uint32_t part_id, int32_t quantity_change, const char *reason);
+
 /**
  * Get single part by ID
  * 

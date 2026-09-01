@@ -127,6 +127,23 @@ static aronet_error_t parse_job(cJSON *json, aronet_job_t *job)
     return ARONET_OK;
 }
 
+static aronet_error_t parse_part(cJSON *json, aronet_part_t *part)
+{
+    cJSON *id = cJSON_GetObjectItemCaseSensitive(json, "id");
+    cJSON *quantity = cJSON_GetObjectItemCaseSensitive(json, "quantity");
+    if (!cJSON_IsObject(json) || !cJSON_IsNumber(id)) {
+        return ARONET_ERR_NOT_FOUND;
+    }
+    memset(part, 0, sizeof(*part));
+    part->id = id->valueint;
+    part->quantity = cJSON_IsNumber(quantity) ? quantity->valueint : 0;
+    copy_json_string(json, "part_number", part->part_number, sizeof(part->part_number));
+    copy_json_string(json, "name", part->name, sizeof(part->name));
+    copy_json_string(json, "description", part->description, sizeof(part->description));
+    copy_json_string(json, "unit", part->unit, sizeof(part->unit));
+    return ARONET_OK;
+}
+
 aronet_error_t aronet_wifi_connect(const char *ssid, const char *password)
 {
     if (network_initialized) {
@@ -273,10 +290,42 @@ aronet_error_t aronet_get_jobs(const char *status, aronet_job_t *jobs, uint32_t 
 
 aronet_error_t aronet_get_parts(aronet_part_t *parts, uint32_t max_parts, uint32_t *count)
 {
-    (void)parts;
-    (void)max_parts;
-    if (count) *count = 0;
-    return ARONET_ERR_NOT_FOUND;
+    if (!parts || !count || max_parts == 0) {
+        return ARONET_ERR_MEMORY;
+    }
+
+    aronet_error_t result = request("/parts", HTTP_METHOD_GET, NULL, &s_response);
+    if (result != ARONET_OK) {
+        return result;
+    }
+    cJSON *root = cJSON_Parse(s_response.data);
+    if (!cJSON_IsArray(root)) {
+        cJSON_Delete(root);
+        return ARONET_ERR_JSON;
+    }
+    uint32_t part_count = 0;
+    cJSON *item = NULL;
+    cJSON_ArrayForEach(item, root) {
+        if (part_count >= max_parts) {
+            break;
+        }
+        if (parse_part(item, &parts[part_count]) == ARONET_OK) {
+            part_count++;
+        }
+    }
+    cJSON_Delete(root);
+    *count = part_count;
+    return part_count ? ARONET_OK : ARONET_ERR_NOT_FOUND;
+}
+
+aronet_error_t aronet_adjust_part(uint32_t part_id, int32_t quantity_change, const char *reason)
+{
+    char path[64];
+    char body[192];
+    snprintf(path, sizeof(path), "/parts/%lu/adjust", (unsigned long)part_id);
+    snprintf(body, sizeof(body), "{\"quantity_change\":%ld,\"reason\":\"%.120s\"}",
+             (long)quantity_change, reason ? reason : "Display adjustment");
+    return request(path, HTTP_METHOD_POST, body, &s_response);
 }
 
 aronet_error_t aronet_get_part(uint32_t part_id, aronet_part_t *part)
