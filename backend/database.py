@@ -111,6 +111,9 @@ def init_db():
 
 def seed_demo_data():
     """Seed database with demo data."""
+    # Ensure tables exist first
+    init_db()
+    
     conn = get_db()
     c = conn.cursor()
     
@@ -147,5 +150,7 @@ def seed_demo_data():
         print("✓ Demo data seeded successfully")
     except sqlite3.IntegrityError:
         print("✓ Demo data already exists")
+    except Exception as e:
+        print(f"Note: {e}")
     finally:
         conn.close()
