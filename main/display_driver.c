@@ -335,8 +335,8 @@ esp_lcd_panel_handle_t display_init_panel(void)
 
 static void display_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    esp_lcd_panel_handle_t panel_handle = lv_display_get_user_data(disp);
-    esp_lcd_panel_draw_bitmap(panel_handle, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    (void)area;
+    (void)px_map;
     lv_display_flush_ready(disp);
 }
 
@@ -356,26 +356,20 @@ lv_display_t *display_init_lvgl(esp_lcd_panel_handle_t panel_handle)
     lv_display_set_user_data(display, panel_handle);
     lv_display_set_color_format(display, EXAMPLE_LV_COLOR_FORMAT);
 
-    size_t draw_buffer_sz = DISPLAY_H_RES * EXAMPLE_LVGL_DRAW_BUF_LINES * EXAMPLE_PIXEL_SIZE;
-    ESP_LOGI(TAG, "Allocating LVGL draw buffers: %zu bytes each", draw_buffer_sz);
-
-    void *buf1 = heap_caps_aligned_alloc(32, draw_buffer_sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    void *buf2 = heap_caps_aligned_alloc(32, draw_buffer_sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-
-    if (!buf1 || !buf2) {
-        ESP_LOGE(TAG, "Failed to allocate LVGL draw buffers");
-        if (buf1) free(buf1);
-        if (buf2) free(buf2);
+    void *frame_buffer = NULL;
+    esp_err_t ret = esp_lcd_rgb_panel_get_frame_buffer(panel_handle, 1, &frame_buffer);
+    if (ret != ESP_OK || !frame_buffer) {
+        ESP_LOGE(TAG, "Failed to get RGB panel framebuffer: %s", esp_err_to_name(ret));
         return NULL;
     }
 
-    memset(buf1, 0, draw_buffer_sz);
-    memset(buf2, 0, draw_buffer_sz);
-
-    lv_display_set_buffers(display, buf1, buf2, draw_buffer_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    size_t frame_buffer_size = DISPLAY_H_RES * DISPLAY_V_RES * EXAMPLE_PIXEL_SIZE;
+    memset(frame_buffer, 0, frame_buffer_size);
+    lv_display_set_buffers(display, frame_buffer, NULL, frame_buffer_size,
+                           LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(display, display_lvgl_flush_cb);
 
-    ESP_LOGI(TAG, "Display initialized: PARTIAL mode + bounce buffer + double buffering");
+    ESP_LOGI(TAG, "Display initialized: direct RGB framebuffer mode");
     return display;
 }
 
