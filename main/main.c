@@ -59,6 +59,7 @@ void app_main(void)
     ESP_LOGI(TAG, "System ready");
 
     // Main LVGL loop
+    bool first_frame_handled = false;
     while (1) {
         lv_lock();
         aronet_gui_tick();
@@ -67,6 +68,11 @@ void app_main(void)
         lv_lock();
         uint32_t time_till_next = lv_timer_handler();
         lv_unlock();
+
+        if (!first_frame_handled) {
+            ESP_LOGI(TAG, "First LVGL frame handled");
+            first_frame_handled = true;
+        }
 
         if (time_till_next < UI_TASK_DELAY_MS) {
             time_till_next = UI_TASK_DELAY_MS;
