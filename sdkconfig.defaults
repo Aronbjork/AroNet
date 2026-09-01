@@ -1,0 +1,148 @@
+# ============================================================================
+# AroNet - ESP32-S3 CrowPanel 5" Display Configuration
+# Based on proven EntalD1 display setup (ESP-IDF 6.0.2)
+# ============================================================================
+
+# =============================================================================
+# Serial Flasher Configuration
+# =============================================================================
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+
+# =============================================================================
+# Serial Monitor Log Colors
+# =============================================================================
+CONFIG_LOG_COLORS=y
+
+# =============================================================================
+# Partition Table Configuration - 16MB Flash with OTA support
+# =============================================================================
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="esp32s3-16mb.csv"
+CONFIG_PARTITION_TABLE_FILENAME="esp32s3-16mb.csv"
+
+# =============================================================================
+# CPU Performance - 240MHz for display operations
+# =============================================================================
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+
+# =============================================================================
+# Compiler Optimization - Size (-Os) to fit 3.5MB OTA partition
+# =============================================================================
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
+CONFIG_COMPILER_DISABLE_DEFAULT_ERRORS=y
+
+# =============================================================================
+# Logging
+# =============================================================================
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+
+# =============================================================================
+# Bootloader
+# =============================================================================
+CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+
+# =============================================================================
+# LVGL Configuration
+# =============================================================================
+CONFIG_LV_CONF_SKIP=y
+CONFIG_LV_USE_OBSERVER=y
+CONFIG_LV_USE_SYSMON=n
+CONFIG_LV_USE_PERF_MONITOR=n
+CONFIG_LV_COLOR_DEPTH_16=y
+
+# LVGL Memory - Use C library malloc for PSRAM compatibility
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_MEM_POOL_EXPAND_SIZE_KILOBYTES=1
+
+# LVGL Threading - FreeRTOS integration (mutex protection)
+CONFIG_LV_OS_FREERTOS=y
+CONFIG_LV_USE_OS=2
+
+# Disable LVGL examples/demos - saves ~100KB flash
+# CONFIG_LV_BUILD_EXAMPLES is not set
+
+# LVGL Fonts
+CONFIG_LV_FONT_MONTSERRAT_8=y
+CONFIG_LV_FONT_MONTSERRAT_10=y
+CONFIG_LV_FONT_MONTSERRAT_12=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_18=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_26=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_FONT_MONTSERRAT_30=y
+CONFIG_LV_FONT_MONTSERRAT_32=y
+CONFIG_LV_FONT_MONTSERRAT_34=y
+CONFIG_LV_FONT_MONTSERRAT_36=y
+CONFIG_LV_FONT_MONTSERRAT_38=y
+CONFIG_LV_FONT_MONTSERRAT_40=y
+CONFIG_LV_FONT_MONTSERRAT_42=y
+CONFIG_LV_FONT_MONTSERRAT_44=y
+CONFIG_LV_FONT_MONTSERRAT_46=y
+
+# =============================================================================
+# Task Watchdog - Less aggressive for LVGL operations
+# =============================================================================
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_PANIC=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=20
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=y
+
+# =============================================================================
+# PSRAM Configuration - High performance for display
+# =============================================================================
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_SPEED_120M=y
+
+# XIP on PSRAM - Critical for preventing screen drift during flash ops
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+CONFIG_SPIRAM_RODATA=y
+
+# Data Cache Line Size - Must be 64B when using RGB bounce buffer
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE=64
+
+# =============================================================================
+# Flash Performance
+# =============================================================================
+CONFIG_ESPTOOLPY_FLASH_MODE_AUTO_DETECT=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASH_SAMPLE_MODE_STR=y
+CONFIG_ESPTOOLPY_FLASHMODE="dio"
+CONFIG_ESPTOOLPY_FLASHFREQ_120M=y
+CONFIG_ESPTOOLPY_FLASHFREQ="120m"
+
+# =============================================================================
+# LCD Anti-tearing Protection
+# =============================================================================
+CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
+
+# =============================================================================
+# FreeRTOS
+# =============================================================================
+CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3072
+
+# =============================================================================
+# Memory Configuration
+# =============================================================================
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=98304
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=1024
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# Disable Bluetooth to save space
+CONFIG_BT_ENABLED=n

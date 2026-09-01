@@ -1,0 +1,32 @@
+# Name,     Type, SubType, Offset,    Size,      Flags
+# 16MB Flash Partition Table for ESP32-S3 with OTA capability
+
+# NVS - 512KB for parameter expansion and wear leveling
+nvs,        data, nvs,     0x9000,    0x80000,
+
+# PHY Init data  
+phy_init,   data, phy,     0x89000,   0x1000,
+
+# OTA Data - Required for OTA updates
+otadata,    data, ota,     0x8A000,   0x2000,
+
+# Application partitions - Dual OTA slots (3.5MB + 3.5MB = 7MB total)
+app0,       app,  ota_0,   0x90000,   0x380000,
+app1,       app,  ota_1,   0x410000,  0x380000,
+
+# NVS Keys - Encryption keys for secure NVS
+nvs_key,    data, nvs_keys,0x790000,  0x1000,
+
+# SPIFFS - File system for data storage (7.875MB)
+spiffs,     data, spiffs,  0x7A0000,  0x7E0000,
+
+# Factory reset data - Backup configuration (128KB)
+factory_data, data, 0x99, 0xF80000,  0x20000,
+
+# User data - Additional storage (256KB)
+user_data,  data, 0x9A,   0xFA0000,  0x40000,
+
+# Coredump - For debugging crashes (128KB)
+coredump,   data, coredump, 0xFE0000, 0x20000,
+
+# Total used: 0x1000000 = exactly 16MB

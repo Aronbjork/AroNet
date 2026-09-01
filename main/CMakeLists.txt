@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "display_driver.c"
+        "display_init.c"
+        "touch_driver.c"
+        "hw_version.c"
+        "screen_orientation.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        esp_lcd
+        esp_timer
+        driver
+        nvs_flash
+        esp_psram
+)

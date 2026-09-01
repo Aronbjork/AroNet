@@ -1,0 +1,352 @@
+from flask import Flask, jsonify, request, render_template
+from flask_cors import CORS
+from database import init_db, seed_demo_data, get_db
+from datetime import datetime
+import json
+
+app = Flask(__name__, template_folder='templates', static_folder='static')
+CORS(app)
+
+# Initialize database on startup
+@app.before_request
+def startup():
+    if not hasattr(app, 'db_initialized'):
+        init_db()
+        seed_demo_data()
+        app.db_initialized = True
+
+# ============ API ENDPOINTS ============
+
+# --- PARTS ---
+@app.route('/api/parts', methods=['GET'])
+def get_parts():
+    """Get all parts with current inventory."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM parts ORDER BY part_number")
+    parts = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return jsonify(parts)
+
+@app.route('/api/parts', methods=['POST'])
+def create_part():
+    """Create new part."""
+    data = request.json
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute("""INSERT INTO parts (part_number, name, description, quantity, reorder_level, unit) 
+                     VALUES (?, ?, ?, ?, ?, ?)""",
+                  (data.get('part_number'), data.get('name'), data.get('description', ''),
+                   data.get('quantity', 0), data.get('reorder_level', 10), data.get('unit', 'pcs')))
+        conn.commit()
+        part_id = c.lastrowid
+        conn.close()
+        return jsonify({'id': part_id, 'status': 'created'}), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/parts/<int:part_id>', methods=['PUT'])
+def update_part(part_id):
+    """Update part details."""
+    data = request.json
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""UPDATE parts SET name=?, description=?, reorder_level=?, unit=? 
+                 WHERE id=?""",
+              (data.get('name'), data.get('description', ''), 
+               data.get('reorder_level', 10), data.get('unit', 'pcs'), part_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'updated'})
+
+# --- OPERATIONS ---
+@app.route('/api/operations', methods=['GET'])
+def get_operations():
+    """Get all operations."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM operations ORDER BY id")
+    operations = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return jsonify(operations)
+
+@app.route('/api/operations', methods=['POST'])
+def create_operation():
+    """Create new operation."""
+    data = request.json
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute("""INSERT INTO operations (name, description, estimated_time_minutes) 
+                     VALUES (?, ?, ?)""",
+                  (data.get('name'), data.get('description', ''), data.get('estimated_time_minutes', 30)))
+        conn.commit()
+        op_id = c.lastrowid
+        conn.close()
+        return jsonify({'id': op_id, 'status': 'created'}), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 400
+
+# --- PRODUCTS ---
+@app.route('/api/products', methods=['GET'])
+def get_products():
+    """Get all products with their operations and parts."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM products ORDER BY product_code")
+    products = [dict(row) for row in c.fetchall()]
+    
+    for product in products:
+        # Get operations for this product
+        c.execute("""SELECT o.* FROM operations o 
+                     JOIN product_operations po ON o.id = po.operation_id 
+                     WHERE po.product_id = ? ORDER BY po.sequence_order""", (product['id'],))
+        product['operations'] = [dict(row) for row in c.fetchall()]
+        
+        # Get parts for this product
+        c.execute("""SELECT p.*, pp.quantity_per_unit FROM parts p 
+                     JOIN product_parts pp ON p.id = pp.part_id 
+                     WHERE pp.product_id = ?""", (product['id'],))
+        product['parts'] = [dict(row) for row in c.fetchall()]
+    
+    conn.close()
+    return jsonify(products)
+
+@app.route('/api/products', methods=['POST'])
+def create_product():
+    """Create new product."""
+    data = request.json
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute("""INSERT INTO products (product_code, name, quantity_to_build) 
+                     VALUES (?, ?, ?)""",
+                  (data.get('product_code'), data.get('name'), data.get('quantity_to_build', 1)))
+        conn.commit()
+        product_id = c.lastrowid
+        
+        # Add operations to product
+        for idx, op_id in enumerate(data.get('operation_ids', [])):
+            c.execute("""INSERT INTO product_operations (product_id, operation_id, sequence_order) 
+                         VALUES (?, ?, ?)""", (product_id, op_id, idx))
+        
+        # Add parts to product
+        for part_spec in data.get('parts', []):
+            c.execute("""INSERT INTO product_parts (product_id, part_id, quantity_per_unit) 
+                         VALUES (?, ?, ?)""", (product_id, part_spec['part_id'], part_spec.get('quantity_per_unit', 1)))
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'id': product_id, 'status': 'created'}), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 400
+
+# --- JOB QUEUE ---
+@app.route('/api/jobs', methods=['GET'])
+def get_jobs():
+    """Get job queue (with optional filtering by device or status)."""
+    device_id = request.args.get('device_id')
+    status = request.args.get('status')
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    query = """SELECT j.*, p.product_code, p.name as product_name, o.name as operation_name 
+               FROM job_queue j 
+               JOIN products p ON j.product_id = p.id 
+               JOIN operations o ON j.operation_id = o.id 
+               WHERE 1=1"""
+    params = []
+    
+    if device_id:
+        query += " AND j.assigned_device_id = ?"
+        params.append(device_id)
+    if status:
+        query += " AND j.status = ?"
+        params.append(status)
+    
+    query += " ORDER BY j.created_at"
+    
+    c.execute(query, params)
+    jobs = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return jsonify(jobs)
+
+@app.route('/api/jobs', methods=['POST'])
+def create_jobs():
+    """Create jobs for a product build (batch)."""
+    data = request.json
+    product_id = data.get('product_id')
+    quantity = data.get('quantity', 1)
+    batch_number = data.get('batch_number', f"BATCH-{datetime.now().strftime('%Y%m%d%H%M%S')}")
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Get operations for this product
+    c.execute("""SELECT o.id FROM operations o 
+                 JOIN product_operations po ON o.id = po.operation_id 
+                 WHERE po.product_id = ? ORDER BY po.sequence_order""", (product_id,))
+    operations = [row[0] for row in c.fetchall()]
+    
+    jobs_created = []
+    try:
+        # Create jobs for each operation, for each unit
+        for unit in range(quantity):
+            for op_id in operations:
+                c.execute("""INSERT INTO job_queue (product_id, operation_id, batch_number, status) 
+                             VALUES (?, ?, ?, 'pending')""", (product_id, op_id, f"{batch_number}-{unit+1}"))
+                jobs_created.append(c.lastrowid)
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'jobs_created': len(jobs_created), 'job_ids': jobs_created}), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/jobs/<int:job_id>/assign', methods=['PUT'])
+def assign_job(job_id):
+    """Assign job to a device."""
+    data = request.json
+    device_id = data.get('device_id')
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("UPDATE job_queue SET assigned_device_id = ?, status = 'assigned' WHERE id = ?", 
+              (device_id, job_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'assigned'})
+
+@app.route('/api/jobs/<int:job_id>/start', methods=['PUT'])
+def start_job(job_id):
+    """Start a job."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("UPDATE job_queue SET status = 'in_progress', started_at = CURRENT_TIMESTAMP WHERE id = ?", (job_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'started'})
+
+@app.route('/api/jobs/<int:job_id>/complete', methods=['PUT'])
+def complete_job(job_id):
+    """Complete a job and decrement inventory."""
+    conn = get_db()
+    c = conn.cursor()
+    
+    try:
+        # Get job details
+        c.execute("SELECT product_id FROM job_queue WHERE id = ?", (job_id,))
+        job = c.fetchone()
+        product_id = job[0]
+        
+        # Get parts for this product
+        c.execute("""SELECT part_id, quantity_per_unit FROM product_parts WHERE product_id = ?""", (product_id,))
+        parts = c.fetchall()
+        
+        # Decrement inventory for each part
+        for part_id, qty_per_unit in parts:
+            c.execute("UPDATE parts SET quantity = quantity - ? WHERE id = ?", (qty_per_unit, part_id))
+            c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id) 
+                         VALUES (?, 'decrement', ?, 'Job completion', ?)""", 
+                      (part_id, -qty_per_unit, request.json.get('device_id', 'unknown')))
+        
+        # Mark job complete
+        c.execute("UPDATE job_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", (job_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'completed'})
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 400
+
+# --- DEVICE STATUS ---
+@app.route('/api/devices/<device_id>/status', methods=['GET', 'POST'])
+def device_status(device_id):
+    """Get or update device status and get next job."""
+    conn = get_db()
+    c = conn.cursor()
+    
+    if request.method == 'POST':
+        # Update device status
+        data = request.json
+        c.execute("""INSERT INTO device_status (device_id, last_seen, wifi_signal, status) 
+                     VALUES (?, CURRENT_TIMESTAMP, ?, ?)
+                     ON CONFLICT(device_id) DO UPDATE SET last_seen=CURRENT_TIMESTAMP, 
+                     wifi_signal=excluded.wifi_signal, status=excluded.status""",
+                  (device_id, data.get('wifi_signal'), data.get('status', 'idle')))
+        conn.commit()
+    
+    # Get device status
+    c.execute("SELECT * FROM device_status WHERE device_id = ?", (device_id,))
+    status = dict(c.fetchone() or {})
+    
+    # Get next pending job for this device
+    c.execute("""SELECT j.id, j.product_id, j.operation_id, j.batch_number, 
+                        p.product_code, o.name as operation_name
+                 FROM job_queue j 
+                 JOIN products p ON j.product_id = p.id 
+                 JOIN operations o ON j.operation_id = o.id 
+                 WHERE j.status = 'pending' LIMIT 1""")
+    next_job = dict(c.fetchone() or {})
+    
+    conn.close()
+    return jsonify({'device_status': status, 'next_job': next_job})
+
+# --- WEB DASHBOARD ---
+@app.route('/')
+def dashboard():
+    """Render web dashboard."""
+    return render_template('dashboard.html')
+
+@app.route('/api/dashboard/stats', methods=['GET'])
+def get_dashboard_stats():
+    """Get dashboard statistics."""
+    conn = get_db()
+    c = conn.cursor()
+    
+    c.execute("SELECT COUNT(*) FROM parts")
+    parts_count = c.fetchone()[0]
+    
+    c.execute("SELECT SUM(quantity) FROM parts")
+    total_inventory = c.fetchone()[0] or 0
+    
+    c.execute("SELECT COUNT(*) FROM job_queue WHERE status = 'pending'")
+    pending_jobs = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM job_queue WHERE status = 'in_progress'")
+    in_progress_jobs = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM job_queue WHERE status = 'completed'")
+    completed_jobs = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM device_status")
+    devices_connected = c.fetchone()[0]
+    
+    conn.close()
+    
+    return jsonify({
+        'parts_count': parts_count,
+        'total_inventory_value': total_inventory,
+        'pending_jobs': pending_jobs,
+        'in_progress_jobs': in_progress_jobs,
+        'completed_jobs': completed_jobs,
+        'devices_connected': devices_connected
+    })
+
+# ============ ERROR HANDLERS ============
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({'error': 'Not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({'error': 'Internal server error'}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)

@@ -1,0 +1,44 @@
+Command: cmake -G Ninja -B D:\Programmering\AroNet\build -DPYTHON_DEPS_CHECKED=1 -DPYTHON=C:\Users\aron_\.espressif\python_env\idf6.0_py3.11_env\Scripts\python.exe -DESP_PLATFORM=1 -DIDF_TARGET=esp32s3 -DCCACHE_ENABLE=True D:\Programmering\AroNet
+NOTE: C:/Users/aron_/esp/v6.0.2/esp-idf/components/bt/host/nimble/Kconfig.in:1421: BT_NIMBLE_MESH_PROVISIONER: 'default 0' is not a valid bool value (only 'y' and 'n' are allowed). Value is treated as 'n'.
+NOTE: C:/Users/aron_/esp/v6.0.2/esp-idf/components/fatfs/Kconfig:230: FATFS_PRINT_LLI: 'default 0' is not a valid bool value (only 'y' and 'n' are allowed). Value is treated as 'n'.
+NOTE: C:/Users/aron_/esp/v6.0.2/esp-idf/components/fatfs/Kconfig:235: FATFS_PRINT_FLOAT: 'default 0' is not a valid bool value (only 'y' and 'n' are allowed). Value is treated as 'n'.
+NOTE: C:/Users/aron_/esp/v6.0.2/esp-idf/components/bt/sdkconfig.rename.esp32s3:4: duplicate rename mapping for CONFIG_BT_NIMBLE_COEX_PHY_CODED_TX_RX_TLIM_EN: previous target CONFIG_BT_LE_COEX_PHY_CODED_TX_RX_TLIM_EN, new target CONFIG_BT_CTRL_COEX_PHY_CODED_TX_RX_TLIM_EN - last mapping is used
+NOTE: C:/Users/aron_/esp/v6.0.2/esp-idf/components/bt/sdkconfig.rename.esp32s3:5: duplicate rename mapping for CONFIG_BT_NIMBLE_COEX_PHY_CODED_TX_RX_TLIM_DIS: previous target CONFIG_BT_LE_COEX_PHY_CODED_TX_RX_TLIM_DIS, new target CONFIG_BT_CTRL_COEX_PHY_CODED_TX_RX_TLIM_DIS - last mapping is used
+Loading defaults file D:/Programmering/AroNet/sdkconfig.defaults...
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:1 line was updated to # ============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:4 line was updated to # ============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:6 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:8 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:13 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:15 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:18 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:20 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:25 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:27 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:31 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:33 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:38 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:40 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:44 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:46 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:50 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:52 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:92 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:94 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:101 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:103 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:117 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:119 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:127 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:129 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:132 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:134 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:138 line was updated to # =============================================================================n
+NOTE: C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_:140 line was updated to # =============================================================================n
+NOTE: C:/Users/aron_/esp/v6.0.2/esp-idf/components/esptool_py/Kconfig.projbuild:39: Choice ESPTOOLPY_FLASHMODE has multiple active selections. The last one will be used: ESPTOOLPY_FLASHMODE_QIO.
+NOTE: Kconfig parser version: 1
+NOTE: Kconfig defaults policy: use sdkconfig
+NOTE: Status: Finished with notifications
+NOTE: D:/Programmering/AroNet/managed_components/lvgl__lvgl/Kconfig:100: LV_MEM_POOL_EXPAND_SIZE_KILOBYTES has user-set value 1 from C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_ but is not visible (disabled dependency)
+NOTE: D:/Programmering/AroNet/managed_components/lvgl__lvgl/Kconfig:1349: LV_USE_PERF_MONITOR has user-set value n from C:\Users\aron_\AppData\Local\Temp\kconfgen_tmpdutm2n7_ but is not visible (disabled dependency)
+HINT: Disabled symbols/choices are not written into sdkconfig file. Setting their user value has no effect.
