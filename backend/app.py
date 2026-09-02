@@ -1,6 +1,6 @@
 from flask import Flask, Response, jsonify, request, render_template
 from flask_cors import CORS
-from database import init_db, seed_demo_data, get_db
+from database import init_db, get_db
 from datetime import datetime
 import csv
 import io
@@ -9,12 +9,15 @@ import json
 app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
 
-# Initialize database on startup
+# Initialize database schema on startup. Demo data is never auto-seeded here -
+# it previously reappeared after every restart even when deleted through the UI,
+# because seed_demo_data() ran unconditionally on every app start. Fresh installs
+# still get one-time demo data from start.sh/start.bat (only when inventory.db
+# doesn't exist yet); see database.seed_demo_data() to run it again by hand.
 @app.before_request
 def startup():
     if not hasattr(app, 'db_initialized'):
         init_db()
-        seed_demo_data()
         app.db_initialized = True
 
 # ============ API ENDPOINTS ============
@@ -863,10 +866,7 @@ def get_dashboard_stats():
     
     c.execute("SELECT COUNT(*) FROM parts")
     parts_count = c.fetchone()[0]
-    
-    c.execute("SELECT SUM(quantity) FROM parts")
-    total_inventory = c.fetchone()[0] or 0
-    
+
     c.execute("SELECT COUNT(*) FROM job_queue WHERE status = 'pending'")
     pending_jobs = c.fetchone()[0]
     
@@ -883,7 +883,6 @@ def get_dashboard_stats():
     
     return jsonify({
         'parts_count': parts_count,
-        'total_inventory_value': total_inventory,
         'pending_jobs': pending_jobs,
         'in_progress_jobs': in_progress_jobs,
         'completed_jobs': completed_jobs,

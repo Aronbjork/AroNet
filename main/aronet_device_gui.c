@@ -353,10 +353,10 @@ static void show_queue(uint32_t tab_index)
     style_list(list);
     for (uint32_t index = 0; index < queue_job_count; index++) {
         char text[384];
-        snprintf(text, sizeof(text), "%.31s - %.127s\n%.63s | %lu pcs | %.63s | %s | %lum elapsed",
-                 queue_jobs[index].product_code, queue_jobs[index].product_name,
-                 queue_jobs[index].operation_name, (unsigned long)queue_jobs[index].quantity,
-                 queue_jobs[index].batch_number,
+        snprintf(text, sizeof(text), "#%lu %.31s - %.127s\n%.63s | %lu pcs | %.63s | %s | %lum elapsed",
+                 (unsigned long)queue_jobs[index].id, queue_jobs[index].product_code,
+                 queue_jobs[index].product_name, queue_jobs[index].operation_name,
+                 (unsigned long)queue_jobs[index].quantity, queue_jobs[index].batch_number,
                  queue_jobs[index].status == JOB_STATUS_PAUSED ? "Paused" : "Pending",
              (unsigned long)(queue_jobs[index].elapsed_seconds / 60));
         lv_obj_t *button = lv_list_add_button(list, NULL, text);

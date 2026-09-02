@@ -313,8 +313,8 @@
                     <div class="value" id="stat-parts">0</div>
                 </div>
                 <div class="stat-card">
-                    <h3>Inventory</h3>
-                    <div class="value" id="stat-inventory">0</div>
+                    <h3>Unique Parts</h3>
+                    <div class="value" id="stat-unique-parts">0</div>
                 </div>
                 <div class="stat-card">
                     <h3>Pending Jobs</h3>
@@ -707,7 +707,7 @@
             const response = await fetch(`${API_BASE}/dashboard/stats`);
             const stats = await response.json();
             document.getElementById('stat-parts').textContent = stats.parts_count;
-            document.getElementById('stat-inventory').textContent = stats.total_inventory_value;
+            document.getElementById('stat-unique-parts').textContent = stats.parts_count;
             document.getElementById('stat-pending').textContent = stats.pending_jobs;
             document.getElementById('stat-progress').textContent = stats.in_progress_jobs;
             document.getElementById('stat-completed').textContent = stats.completed_jobs;
