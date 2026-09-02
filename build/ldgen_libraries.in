@@ -203,7 +203,9 @@ $<TARGET_FILE:idf::perfmon>
 $<TARGET_FILE:idf::rt>
 $<TARGET_FILE:idf::spiffs>
 $<TARGET_FILE:idf::lvgl__lvgl>
+$<TARGET_FILE:idf::espressif__cjson>
 $<TARGET_FILE:idf::main>
+$<TARGET_FILE:__idf_lvgl__lvgl>
 $<TARGET_FILE:__idf_esp_lcd>
 $<TARGET_FILE:__idf_driver>
-$<TARGET_FILE:__idf_lvgl__lvgl>
+$<TARGET_FILE:__idf_espressif__cjson>

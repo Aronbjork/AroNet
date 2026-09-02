@@ -34,6 +34,32 @@ The system will start at **http://localhost:5000**
 ### Products
 - `GET /api/products` - List all products with operations & parts
 - `POST /api/products` - Create new product
+- `PUT /api/products/<id>` - Update a product, its operations, and its required parts
+- `GET /api/products/export.csv` - Export products with one row per required part
+- `POST /api/products/import.csv` - Import products, workflows, and required parts
+
+### CSV Exports
+- `GET /api/inventory/export.csv` - Current stock in a Fortnox-mappable layout
+- `POST /api/inventory/import.csv` - Import stock levels
+- `GET /api/production-times/export.csv` - Estimated vs. actual time per job
+  (add `?status=completed` for finished jobs only)
+
+All CSV files are semicolon separated and UTF-8 with a BOM, so Excel opens them
+directly. The product CSV has one row per required part, repeating the product
+columns, and lists the workflow as `Operation A | Operation B` in the
+`operations` column:
+
+```
+product_code;product_name;quantity_to_build;operations;part_number;part_name;quantity_per_unit
+CS20;CS20 Industrial Dehumidifier;15;Laser Cutting | Bending;PN-MOTOR-01;Motor 3HP;2
+CS20;CS20 Industrial Dehumidifier;15;Laser Cutting | Bending;PN-STEEL-FRAME;Steel Frame;1
+```
+
+Importing matches products on `product_code` (creating missing ones) and
+replaces that product's required parts with the rows in the file. Parts are
+matched by `part_number` and operations by name — both must already exist, so
+import the inventory CSV first. Leaving the `operations` column empty keeps the
+product's existing workflow.
 
 ### Job Queue
 - `GET /api/jobs?device_id=DEVICE1` - Get jobs for a device

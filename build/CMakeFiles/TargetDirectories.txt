@@ -1149,6 +1149,13 @@ D:/Programmering/AroNet/build/esp-idf/lvgl__lvgl/CMakeFiles/list_install_compone
 D:/Programmering/AroNet/build/esp-idf/lvgl__lvgl/CMakeFiles/install.dir
 D:/Programmering/AroNet/build/esp-idf/lvgl__lvgl/CMakeFiles/install/local.dir
 D:/Programmering/AroNet/build/esp-idf/lvgl__lvgl/CMakeFiles/install/strip.dir
+D:/Programmering/AroNet/build/esp-idf/espressif__cjson/CMakeFiles/__idf_espressif__cjson.dir
+D:/Programmering/AroNet/build/esp-idf/espressif__cjson/CMakeFiles/edit_cache.dir
+D:/Programmering/AroNet/build/esp-idf/espressif__cjson/CMakeFiles/rebuild_cache.dir
+D:/Programmering/AroNet/build/esp-idf/espressif__cjson/CMakeFiles/list_install_components.dir
+D:/Programmering/AroNet/build/esp-idf/espressif__cjson/CMakeFiles/install.dir
+D:/Programmering/AroNet/build/esp-idf/espressif__cjson/CMakeFiles/install/local.dir
+D:/Programmering/AroNet/build/esp-idf/espressif__cjson/CMakeFiles/install/strip.dir
 D:/Programmering/AroNet/build/esp-idf/main/CMakeFiles/__idf_main.dir
 D:/Programmering/AroNet/build/esp-idf/main/CMakeFiles/edit_cache.dir
 D:/Programmering/AroNet/build/esp-idf/main/CMakeFiles/rebuild_cache.dir

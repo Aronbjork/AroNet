@@ -248,6 +248,10 @@
             display: block;
         }
         
+        [hidden] {
+            display: none !important;
+        }
+
         .action-buttons {
             display: flex;
             gap: 10px;
@@ -439,7 +443,7 @@
             <div id="message-products" class="message"></div>
             
             <div class="form-section">
-                <h2>Add New Product</h2>
+                <h2 id="product-form-title">Add New Product</h2>
                 <form id="add-product-form">
                     <div class="form-row">
                         <div class="form-group">
@@ -449,6 +453,10 @@
                         <div class="form-group">
                             <label>Product Name *</label>
                             <input type="text" name="name" required placeholder="e.g., CS20 Industrial Dehumidifier">
+                        </div>
+                        <div class="form-group">
+                            <label>Quantity To Build</label>
+                            <input type="number" name="quantity_to_build" value="1" min="1">
                         </div>
                     </div>
                     <div class="form-group">
@@ -465,16 +473,32 @@
                         </div>
                         <div id="bom-parts-list"></div>
                     </div>
-                    <button type="submit">Add Product</button>
+                    <div class="action-buttons">
+                        <button type="submit" id="product-submit-button">Add Product</button>
+                        <button type="button" class="secondary" id="cancel-product-edit" hidden>Cancel Edit</button>
+                    </div>
                 </form>
             </div>
-            
+
+            <div class="form-section">
+                <h2>Product CSV</h2>
+                <p><a href="/api/products/export.csv">Export products and required parts CSV</a></p>
+                <form id="import-products-form">
+                    <div class="form-group">
+                        <label>AroNet product CSV</label>
+                        <input type="file" name="file" accept=".csv,text/csv" required>
+                    </div>
+                    <button type="submit">Import CSV</button>
+                </form>
+            </div>
+
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
                             <th>Code</th>
                             <th>Name</th>
+                            <th>To Build</th>
                             <th>Operations</th>
                             <th>Parts Required</th>
                             <th>Actions</th>
@@ -508,16 +532,24 @@
                     <button type="submit">Create Jobs</button>
                 </form>
             </div>
-            
+
+            <div class="form-section">
+                <h2>Production Times</h2>
+                <p><a href="/api/production-times/export.csv">Export all production times CSV</a></p>
+                <p><a href="/api/production-times/export.csv?status=completed">Export completed jobs only</a></p>
+            </div>
+
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
                             <th>Job ID</th>
                             <th>Product</th>
+                            <th>Product Name</th>
                             <th>Operation</th>
                             <th>Batch</th>
                             <th>Quantity</th>
+                            <th>Time (min)</th>
                             <th>Status</th>
                             <th>Device</th>
                             <th>Started</th>
@@ -726,25 +758,72 @@
         async function loadProducts() {
             const response = await fetch(`${API_BASE}/products`);
             const products = await response.json();
+            loadedProducts = products;
             const tbody = document.getElementById('products-table');
             tbody.innerHTML = products.map(p => `
                 <tr>
                     <td><strong>${p.product_code}</strong></td>
                     <td>${p.name}</td>
+                    <td>${p.quantity_to_build}</td>
                     <td>${p.operations.map(o => o.name).join(' → ') || 'None'}</td>
                     <td>${p.parts.map(part => `${part.part_number} x${part.quantity_per_unit}`).join(', ') || 'None'}</td>
-                    <td><button class="secondary" onclick="deleteProduct(${p.id}, '${p.product_code}')">Delete</button></td>
+                    <td class="action-buttons"><button onclick="editProduct(${p.id})">Edit</button><button class="secondary" onclick="deleteProduct(${p.id}, '${p.product_code}')">Delete</button></td>
                 </tr>
             `).join('');
-            
+
             // Update jobs form select
             const select = document.querySelector('select[name="product_id"]');
-            select.innerHTML = '<option value="">Select product...</option>' + 
+            select.innerHTML = '<option value="">Select product...</option>' +
                                products.map(p => `<option value="${p.id}">${p.product_code} - ${p.name}</option>`).join('');
         }
-        
+
         let availableParts = [];
         let bomParts = [];
+        let loadedProducts = [];
+        let editingProductId = null;
+
+        function editProduct(productId) {
+            const product = loadedProducts.find(item => item.id === productId);
+            if (!product) return;
+
+            const form = document.getElementById('add-product-form');
+            editingProductId = productId;
+            form.elements.product_code.value = product.product_code;
+            form.elements.name.value = product.name;
+            form.elements.quantity_to_build.value = product.quantity_to_build;
+
+            const productOperationIds = new Set(product.operations.map(operation => operation.id));
+            Array.from(form.elements.operation_ids.options).forEach(option => {
+                option.selected = productOperationIds.has(Number.parseInt(option.value, 10));
+            });
+
+            bomParts = product.parts.map(part => ({
+                part_id: part.id,
+                part_number: part.part_number,
+                name: part.name,
+                quantity_per_unit: part.quantity_per_unit
+            }));
+            renderBomParts();
+
+            document.getElementById('product-form-title').textContent = `Edit Product ${product.product_code}`;
+            document.getElementById('product-submit-button').textContent = 'Save Product';
+            document.getElementById('cancel-product-edit').hidden = false;
+            form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function resetProductForm() {
+            const form = document.getElementById('add-product-form');
+            editingProductId = null;
+            form.reset();
+            Array.from(form.elements.operation_ids.options).forEach(option => option.selected = false);
+            bomParts = [];
+            renderBomParts();
+            document.getElementById('product-form-title').textContent = 'Add New Product';
+            document.getElementById('product-submit-button').textContent = 'Add Product';
+            document.getElementById('cancel-product-edit').hidden = true;
+        }
+
+        document.getElementById('cancel-product-edit').addEventListener('click', resetProductForm);
 
         function renderBomPartOptions() {
             const select = document.getElementById('bom-part-select');
@@ -781,25 +860,43 @@
             const data = {
                 product_code: formData.get('product_code'),
                 name: formData.get('name'),
+                quantity_to_build: Number.parseInt(formData.get('quantity_to_build'), 10) || 1,
                 operation_ids: opIds,
                 parts: bomParts.map(({ part_id, quantity_per_unit }) => ({ part_id, quantity_per_unit }))
             };
-            
-            const response = await fetch(`${API_BASE}/products`, {
-                method: 'POST',
+
+            const editing = editingProductId !== null;
+            const response = await fetch(editing ? `${API_BASE}/products/${editingProductId}` : `${API_BASE}/products`, {
+                method: editing ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            
+
             if (response.ok) {
-                showMessage('products', '✓ Product added successfully', 'success');
-                e.target.reset();
-                bomParts = [];
-                renderBomParts();
+                showMessage('products', editing ? '✓ Product updated successfully' : '✓ Product added successfully', 'success');
+                resetProductForm();
                 loadProducts();
             } else {
                 const error = await response.json();
                 showMessage('products', '✗ Error: ' + error.error, 'error');
+            }
+        });
+
+        document.getElementById('import-products-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const response = await fetch(`${API_BASE}/products/import.csv`, {
+                method: 'POST',
+                body: new FormData(e.target)
+            });
+            if (response.ok) {
+                const result = await response.json();
+                showMessage('products', `Imported ${result.created} new and ${result.updated} updated products`, 'success');
+                e.target.reset();
+                resetProductForm();
+                loadProducts();
+            } else {
+                const error = await response.json();
+                showMessage('products', `Error: ${error.error}`, 'error');
             }
         });
         
@@ -812,9 +909,11 @@
                 <tr>
                     <td>${j.id}</td>
                     <td>${j.product_code}</td>
+                    <td>${j.product_name}</td>
                     <td>${j.operation_name}</td>
                     <td>${j.batch_number}</td>
                     <td>${j.quantity}</td>
+                    <td>${Math.round((j.elapsed_seconds || 0) / 60)}</td>
                     <td><span class="badge ${j.status}">${j.status}</span></td>
                     <td>${j.assigned_device_id || '-'}</td>
                     <td>${j.started_at ? new Date(j.started_at).toLocaleString() : '-'}</td>

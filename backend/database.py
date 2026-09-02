@@ -159,17 +159,11 @@ def seed_demo_data():
         product_id = c.fetchone()[0]
         c.execute("SELECT id FROM operations ORDER BY id")
         operation_ids = [row[0] for row in c.fetchall()]
-        c.execute("SELECT id FROM parts ORDER BY id")
-        part_ids = [row[0] for row in c.fetchall()]
 
         for sequence_order, operation_id in enumerate(operation_ids):
             c.execute("""INSERT OR IGNORE INTO product_operations
                          (product_id, operation_id, sequence_order) VALUES (?, ?, ?)""",
                       (product_id, operation_id, sequence_order))
-        for part_id in part_ids:
-            c.execute("""INSERT OR IGNORE INTO product_parts
-                         (product_id, part_id, quantity_per_unit) VALUES (?, ?, 1)""",
-                      (product_id, part_id))
         
         conn.commit()
         print("✓ Demo data seeded successfully")

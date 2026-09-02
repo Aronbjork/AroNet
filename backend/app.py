@@ -154,6 +154,59 @@ def delete_operation(operation_id):
     return jsonify({'status': 'deleted'})
 
 # --- PRODUCTS ---
+def parse_product_payload(data, require_all=True):
+    """Validate a product payload and return (values, error)."""
+    product_code = (data.get('product_code') or '').strip()
+    name = (data.get('name') or '').strip()
+    if require_all and (not product_code or not name):
+        return None, 'Product code and name are required'
+
+    quantity_to_build = data.get('quantity_to_build', 1)
+    if not isinstance(quantity_to_build, int) or quantity_to_build < 1:
+        return None, 'Quantity to build must be a positive whole number'
+
+    parts = data.get('parts')
+    if parts is not None:
+        seen_part_ids = set()
+        for part_spec in parts:
+            part_id = part_spec.get('part_id')
+            quantity_per_unit = part_spec.get('quantity_per_unit', 1)
+            if not isinstance(part_id, int):
+                return None, 'Every required part needs a part id'
+            if not isinstance(quantity_per_unit, int) or quantity_per_unit < 1:
+                return None, 'Quantity per unit must be a positive whole number'
+            if part_id in seen_part_ids:
+                return None, 'A part can only be listed once per product'
+            seen_part_ids.add(part_id)
+
+    operation_ids = data.get('operation_ids')
+    if operation_ids is not None:
+        if len(set(operation_ids)) != len(operation_ids):
+            return None, 'An operation can only be listed once per product'
+
+    return {
+        'product_code': product_code,
+        'name': name,
+        'quantity_to_build': quantity_to_build,
+        'operation_ids': operation_ids,
+        'parts': parts,
+    }, None
+
+def replace_product_operations(cursor, product_id, operation_ids):
+    """Replace the workflow of a product with the given ordered operations."""
+    cursor.execute("DELETE FROM product_operations WHERE product_id = ?", (product_id,))
+    for sequence_order, operation_id in enumerate(operation_ids):
+        cursor.execute("""INSERT INTO product_operations (product_id, operation_id, sequence_order)
+                          VALUES (?, ?, ?)""", (product_id, operation_id, sequence_order))
+
+def replace_product_parts(cursor, product_id, parts):
+    """Replace the bill of materials of a product with the given parts."""
+    cursor.execute("DELETE FROM product_parts WHERE product_id = ?", (product_id,))
+    for part_spec in parts:
+        cursor.execute("""INSERT INTO product_parts (product_id, part_id, quantity_per_unit)
+                          VALUES (?, ?, ?)""",
+                       (product_id, part_spec['part_id'], part_spec.get('quantity_per_unit', 1)))
+
 @app.route('/api/products', methods=['GET'])
 def get_products():
     """Get all products with their operations and parts."""
@@ -181,30 +234,54 @@ def get_products():
 @app.route('/api/products', methods=['POST'])
 def create_product():
     """Create new product."""
-    data = request.json
+    values, error = parse_product_payload(request.json or {})
+    if error:
+        return jsonify({'error': error}), 400
+
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute("""INSERT INTO products (product_code, name, quantity_to_build) 
+        c.execute("""INSERT INTO products (product_code, name, quantity_to_build)
                      VALUES (?, ?, ?)""",
-                  (data.get('product_code'), data.get('name'), data.get('quantity_to_build', 1)))
-        conn.commit()
+                  (values['product_code'], values['name'], values['quantity_to_build']))
         product_id = c.lastrowid
-        
-        # Add operations to product
-        for idx, op_id in enumerate(data.get('operation_ids', [])):
-            c.execute("""INSERT INTO product_operations (product_id, operation_id, sequence_order) 
-                         VALUES (?, ?, ?)""", (product_id, op_id, idx))
-        
-        # Add parts to product
-        for part_spec in data.get('parts', []):
-            c.execute("""INSERT INTO product_parts (product_id, part_id, quantity_per_unit) 
-                         VALUES (?, ?, ?)""", (product_id, part_spec['part_id'], part_spec.get('quantity_per_unit', 1)))
-        
+        replace_product_operations(c, product_id, values['operation_ids'] or [])
+        replace_product_parts(c, product_id, values['parts'] or [])
         conn.commit()
         conn.close()
         return jsonify({'id': product_id, 'status': 'created'}), 201
     except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/products/<int:product_id>', methods=['PUT'])
+def update_product(product_id):
+    """Update a product, including its workflow and its required parts."""
+    values, error = parse_product_payload(request.json or {})
+    if error:
+        return jsonify({'error': error}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute("SELECT id FROM products WHERE id = ?", (product_id,))
+        if not c.fetchone():
+            conn.close()
+            return jsonify({'error': 'Product not found'}), 404
+
+        c.execute("""UPDATE products SET product_code = ?, name = ?, quantity_to_build = ?
+                     WHERE id = ?""",
+                  (values['product_code'], values['name'], values['quantity_to_build'], product_id))
+        if values['operation_ids'] is not None:
+            replace_product_operations(c, product_id, values['operation_ids'])
+        if values['parts'] is not None:
+            replace_product_parts(c, product_id, values['parts'])
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'updated'})
+    except Exception as e:
+        conn.rollback()
         conn.close()
         return jsonify({'error': str(e)}), 400
 
@@ -414,8 +491,14 @@ def complete_job(job_id):
                           (part['id'], -used_quantity, f'Job {job_id} completed',
                            (request.json or {}).get('device_id', 'dashboard')))
 
-        # Mark job complete
-        c.execute("UPDATE job_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", (job_id,))
+        # Mark job complete and bank the time worked since it was last started
+        c.execute("""UPDATE job_queue
+                     SET status = 'completed', completed_at = CURRENT_TIMESTAMP,
+                         elapsed_seconds = elapsed_seconds + CASE
+                             WHEN started_at IS NULL THEN 0
+                             ELSE CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER)
+                         END
+                     WHERE id = ?""", (job_id,))
         conn.commit()
         conn.close()
         return jsonify({'status': 'completed'})
@@ -535,6 +618,219 @@ def import_inventory_csv():
                              VALUES (?, 'csv_import', ?, 'CSV inventory import', 'dashboard')""",
                           (c.lastrowid, quantity))
                 created += 1
+        conn.commit()
+    except Exception as error:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': str(error)}), 400
+    conn.close()
+    return jsonify({'status': 'imported', 'created': created, 'updated': updated})
+
+def csv_response(rows, header, filename):
+    """Render rows as a semicolon separated CSV download."""
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=';')
+    writer.writerow(header)
+    writer.writerows(rows)
+    return Response('\ufeff' + output.getvalue(), content_type='text/csv; charset=utf-8', headers={
+        'Content-Disposition': f'attachment; filename={filename}'
+    })
+
+PRODUCTION_TIME_HEADER = [
+    'job_id', 'batch_number', 'product_code', 'product_name', 'operation', 'quantity',
+    'status', 'device', 'estimated_minutes_per_unit', 'estimated_minutes_total',
+    'actual_minutes', 'actual_minutes_per_unit', 'actual_seconds',
+    'created_at', 'started_at', 'completed_at',
+]
+
+@app.route('/api/production-times/export.csv', methods=['GET'])
+def export_production_times_csv():
+    """Export estimated and actual production time per job."""
+    status = request.args.get('status')
+
+    conn = get_db()
+    c = conn.cursor()
+    query = """SELECT j.id, j.batch_number, j.quantity, j.status, j.assigned_device_id,
+                      j.elapsed_seconds, j.created_at, j.started_at, j.completed_at,
+                      p.product_code, p.name AS product_name,
+                      o.name AS operation_name, o.estimated_time_minutes,
+                      CASE WHEN j.status = 'in_progress' AND j.started_at IS NOT NULL
+                           THEN CAST((julianday('now') - julianday(j.started_at)) * 86400 AS INTEGER)
+                           ELSE 0 END AS running_seconds
+               FROM job_queue j
+               JOIN products p ON j.product_id = p.id
+               JOIN operations o ON j.operation_id = o.id
+               WHERE 1=1"""
+    params = []
+    if status == 'available':
+        query += " AND j.status IN ('pending', 'paused')"
+    elif status:
+        query += " AND j.status = ?"
+        params.append(status)
+    query += " ORDER BY j.created_at, j.id"
+    c.execute(query, params)
+    jobs = c.fetchall()
+    conn.close()
+
+    rows = []
+    for job in jobs:
+        actual_seconds = (job['elapsed_seconds'] or 0) + (job['running_seconds'] or 0)
+        actual_minutes = round(actual_seconds / 60, 2)
+        quantity = job['quantity'] or 1
+        rows.append([
+            job['id'], job['batch_number'], job['product_code'], job['product_name'],
+            job['operation_name'], quantity, job['status'], job['assigned_device_id'] or '',
+            job['estimated_time_minutes'], job['estimated_time_minutes'] * quantity,
+            actual_minutes, round(actual_minutes / quantity, 2), actual_seconds,
+            job['created_at'] or '', job['started_at'] or '', job['completed_at'] or '',
+        ])
+    return csv_response(rows, PRODUCTION_TIME_HEADER, 'aronet-production-times.csv')
+
+PRODUCT_CSV_HEADER = [
+    'product_code', 'product_name', 'quantity_to_build', 'operations',
+    'part_number', 'part_name', 'quantity_per_unit',
+]
+
+@app.route('/api/products/export.csv', methods=['GET'])
+def export_products_csv():
+    """Export every product with its workflow and one row per required part."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM products ORDER BY product_code")
+    products = c.fetchall()
+
+    rows = []
+    for product in products:
+        c.execute("""SELECT o.name FROM operations o
+                     JOIN product_operations po ON o.id = po.operation_id
+                     WHERE po.product_id = ? ORDER BY po.sequence_order""", (product['id'],))
+        operations = ' | '.join(row['name'] for row in c.fetchall())
+        c.execute("""SELECT p.part_number, p.name, pp.quantity_per_unit
+                     FROM parts p JOIN product_parts pp ON pp.part_id = p.id
+                     WHERE pp.product_id = ? ORDER BY p.part_number""", (product['id'],))
+        parts = c.fetchall()
+        if not parts:
+            rows.append([product['product_code'], product['name'],
+                         product['quantity_to_build'], operations, '', '', ''])
+            continue
+        for part in parts:
+            rows.append([product['product_code'], product['name'], product['quantity_to_build'],
+                         operations, part['part_number'], part['name'], part['quantity_per_unit']])
+    conn.close()
+    return csv_response(rows, PRODUCT_CSV_HEADER, 'aronet-products.csv')
+
+@app.route('/api/products/import.csv', methods=['POST'])
+def import_products_csv():
+    """Import products, workflows, and bills of materials from an AroNet product CSV."""
+    uploaded_file = request.files.get('file')
+    if not uploaded_file or not uploaded_file.filename:
+        return jsonify({'error': 'Choose a CSV file to import'}), 400
+
+    try:
+        content = uploaded_file.read().decode('utf-8-sig')
+        rows = list(csv.DictReader(io.StringIO(content), delimiter=';'))
+    except UnicodeDecodeError:
+        return jsonify({'error': 'CSV must be UTF-8 encoded'}), 400
+
+    required_fields = {'product_code', 'product_name', 'part_number', 'quantity_per_unit'}
+    if not rows or not required_fields.issubset(rows[0].keys()):
+        return jsonify({'error': 'CSV must use the exported AroNet product headers'}), 400
+
+    # Collect the rows per product so each product is written in one pass.
+    products = {}
+    order = []
+    for row_number, row in enumerate(rows, start=2):
+        product_code = (row.get('product_code') or '').strip()
+        product_name = (row.get('product_name') or '').strip()
+        if not product_code:
+            return jsonify({'error': f'Row {row_number}: product_code is required'}), 400
+
+        quantity_to_build = (row.get('quantity_to_build') or '').strip() or '1'
+        try:
+            quantity_to_build = int(quantity_to_build)
+        except ValueError:
+            return jsonify({'error': f'Row {row_number}: quantity_to_build must be a whole number'}), 400
+        if quantity_to_build < 1:
+            return jsonify({'error': f'Row {row_number}: quantity_to_build must be at least 1'}), 400
+
+        operations = [name.strip() for name in (row.get('operations') or '').split('|') if name.strip()]
+
+        if product_code not in products:
+            products[product_code] = {'name': product_name, 'quantity_to_build': quantity_to_build,
+                                      'operations': operations, 'parts': []}
+            order.append(product_code)
+        product = products[product_code]
+        if product_name:
+            product['name'] = product_name
+        if operations:
+            product['operations'] = operations
+
+        part_number = (row.get('part_number') or '').strip()
+        if not part_number:
+            continue
+        try:
+            quantity_per_unit = int((row.get('quantity_per_unit') or '').strip() or '1')
+        except ValueError:
+            return jsonify({'error': f'Row {row_number}: quantity_per_unit must be a whole number'}), 400
+        if quantity_per_unit < 1:
+            return jsonify({'error': f'Row {row_number}: quantity_per_unit must be at least 1'}), 400
+        if any(existing['part_number'] == part_number for existing in product['parts']):
+            return jsonify({'error': f'Row {row_number}: {part_number} is listed twice for {product_code}'}), 400
+        product['parts'].append({'part_number': part_number, 'quantity_per_unit': quantity_per_unit,
+                                 'row_number': row_number})
+
+    conn = get_db()
+    c = conn.cursor()
+    created = 0
+    updated = 0
+    try:
+        for product_code in order:
+            product = products[product_code]
+            if not product['name']:
+                conn.rollback()
+                conn.close()
+                return jsonify({'error': f'{product_code}: product_name is required'}), 400
+
+            part_specs = []
+            for part in product['parts']:
+                c.execute("SELECT id FROM parts WHERE part_number = ?", (part['part_number'],))
+                existing_part = c.fetchone()
+                if not existing_part:
+                    conn.rollback()
+                    conn.close()
+                    return jsonify({'error': f"Row {part['row_number']}: unknown part {part['part_number']}."
+                                             ' Import the inventory CSV or add the part first'}), 400
+                part_specs.append({'part_id': existing_part['id'],
+                                   'quantity_per_unit': part['quantity_per_unit']})
+
+            operation_ids = []
+            for operation_name in product['operations']:
+                c.execute("SELECT id FROM operations WHERE name = ?", (operation_name,))
+                existing_operation = c.fetchone()
+                if not existing_operation:
+                    conn.rollback()
+                    conn.close()
+                    return jsonify({'error': f'{product_code}: unknown operation "{operation_name}".'
+                                             ' Add the operation first'}), 400
+                operation_ids.append(existing_operation['id'])
+
+            c.execute("SELECT id FROM products WHERE product_code = ?", (product_code,))
+            existing_product = c.fetchone()
+            if existing_product:
+                product_id = existing_product['id']
+                c.execute("UPDATE products SET name = ?, quantity_to_build = ? WHERE id = ?",
+                          (product['name'], product['quantity_to_build'], product_id))
+                updated += 1
+            else:
+                c.execute("""INSERT INTO products (product_code, name, quantity_to_build)
+                             VALUES (?, ?, ?)""",
+                          (product_code, product['name'], product['quantity_to_build']))
+                product_id = c.lastrowid
+                created += 1
+
+            if product['operations']:
+                replace_product_operations(c, product_id, operation_ids)
+            replace_product_parts(c, product_id, part_specs)
         conn.commit()
     except Exception as error:
         conn.rollback()

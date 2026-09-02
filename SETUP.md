@@ -188,6 +188,85 @@ sudo systemctl stop aronet.service
 sudo journalctl -u aronet.service -f
 ```
 
+## Shipping a Change to the Raspberry Pi
+
+The Pi runs the same Git checkout that lives on the Windows machine, pulled from
+https://github.com/Aronbjork/AroNet. Backend changes are plain Python and
+templates, so there is nothing to compile — the Pi only needs the new files and a
+restart. `git pull` never touches `backend/inventory.db`, so your live stock and
+job history survive every deploy.
+
+### 1. Push from Windows
+
+```powershell
+cd d:\Programmering\AroNet
+git status                       # see what changed
+git add backend SETUP.md         # stage the files you actually changed
+git commit -m "Describe the change"
+git push
+```
+
+### 2. Pull on the Pi
+
+```bash
+ssh pi@raspberrypi.local
+cd ~/AroNet
+git pull
+```
+
+### 3. Restart the server
+
+If AroNet runs as the systemd service:
+
+```bash
+sudo systemctl restart aronet.service
+sudo systemctl status aronet.service        # should say active (running)
+```
+
+If you start it by hand instead, stop the old process with `Ctrl+C` in its SSH
+window and start it again:
+
+```bash
+cd ~/AroNet/backend
+python3 app.py
+```
+
+A hand-started server dies when that SSH session closes. Use
+`sudo systemctl restart aronet.service`, or start it inside `tmux`, if you want
+it to keep running after you log out.
+
+Only rerun `pip install -r backend/requirements.txt` when `requirements.txt`
+itself changed in the pull.
+
+### 4. Check the change landed
+
+```bash
+curl http://127.0.0.1:5000/api/dashboard/stats
+curl -s http://127.0.0.1:5000/api/production-times/export.csv | head -3
+```
+
+Then open `http://<pi-ip>:5000` from a browser on the same network.
+
+### If `git pull` refuses to run
+
+The Pi should be a read-only mirror of GitHub — never edit files there. If it
+complains about local changes anyway, throw the Pi-side edits away and take the
+GitHub version:
+
+```bash
+cd ~/AroNet
+git checkout -- .          # discard local edits (keeps inventory.db, which is untracked)
+git pull
+```
+
+### Note on the service file
+
+`deploy/aronet.service` is written for a user named `aronet` with the checkout at
+`/home/aronet/AroNet`. If you log in as `pi` and pull to `/home/pi/AroNet`, edit
+`User=`, `Group=`, `WorkingDirectory=`, and `ExecStart=` in
+`/etc/systemd/system/aronet.service` to say `pi` and `/home/pi/AroNet`, then run
+`sudo systemctl daemon-reload && sudo systemctl restart aronet.service`.
+
 ## Troubleshooting
 
 ### Backend won't start

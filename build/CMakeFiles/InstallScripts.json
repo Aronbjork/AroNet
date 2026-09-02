@@ -164,6 +164,7 @@
 		"D:/Programmering/AroNet/build/esp-idf/spiffs/cmake_install.cmake",
 		"D:/Programmering/AroNet/build/esp-idf/ulp/cmake_install.cmake",
 		"D:/Programmering/AroNet/build/esp-idf/lvgl__lvgl/cmake_install.cmake",
+		"D:/Programmering/AroNet/build/esp-idf/espressif__cjson/cmake_install.cmake",
 		"D:/Programmering/AroNet/build/esp-idf/main/cmake_install.cmake"
 	],
 	"Parallel" : false
