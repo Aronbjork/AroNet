@@ -430,14 +430,19 @@ def pause_job(job_id):
 
 @app.route('/api/jobs/<int:job_id>/assign', methods=['PUT'])
 def assign_job(job_id):
-    """Assign job to a device."""
-    data = request.json
-    device_id = data.get('device_id')
-    
+    """Assign a job to a device, or an operator working from the dashboard."""
+    data = request.json or {}
+    device_id = (data.get('device_id') or '').strip()
+    if not device_id:
+        return jsonify({'error': 'device_id is required'}), 400
+
     conn = get_db()
     c = conn.cursor()
-    c.execute("UPDATE job_queue SET assigned_device_id = ?, status = 'assigned' WHERE id = ?", 
+    c.execute("UPDATE job_queue SET assigned_device_id = ?, status = 'assigned' WHERE id = ?",
               (device_id, job_id))
+    if not c.rowcount:
+        conn.close()
+        return jsonify({'error': 'Job not found'}), 404
     conn.commit()
     conn.close()
     return jsonify({'status': 'assigned'})

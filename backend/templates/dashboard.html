@@ -299,6 +299,7 @@
                 <button class="tab-btn" data-tab="operations">Operations</button>
                 <button class="tab-btn" data-tab="products">Products</button>
                 <button class="tab-btn" data-tab="jobs">Jobs</button>
+                <button class="tab-btn" data-tab="work">Work</button>
             </div>
         </header>
         
@@ -562,10 +563,69 @@
                 </table>
             </div>
         </div>
+
+        <!-- WORK TAB -->
+        <div id="work" class="content">
+            <div id="message-work" class="message"></div>
+
+            <div class="form-section">
+                <h2>Sign In</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Your Name *</label>
+                        <input type="text" id="operator-name" placeholder="e.g., Linda">
+                    </div>
+                </div>
+                <p id="operator-hint">Enter your name once, then start a job below. It's saved on this device so you don't need to type it again next time.</p>
+            </div>
+
+            <div class="form-section">
+                <h2>Your Active Jobs</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Product</th>
+                                <th>Operation</th>
+                                <th>Batch</th>
+                                <th>Quantity</th>
+                                <th>Time (min)</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="work-active-table">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Jobs Waiting to Be Started</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Product</th>
+                                <th>Operation</th>
+                                <th>Batch</th>
+                                <th>Quantity</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="work-available-table">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
-    
+
     <script>
         const API_BASE = '/api';
+        const OPERATOR_NAME_KEY = 'aronet_operator_name';
 
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -581,6 +641,7 @@
                 else if (e.target.dataset.tab === 'operations') loadOperations();
                 else if (e.target.dataset.tab === 'products') loadProducts();
                 else if (e.target.dataset.tab === 'jobs') loadJobs();
+                else if (e.target.dataset.tab === 'work') loadWork();
             });
         });
         
@@ -948,6 +1009,132 @@
             }
         });
         
+        // WORK (start/pause/complete jobs from the dashboard, same as a display device)
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
+
+        function getOperatorName() {
+            return document.getElementById('operator-name').value.trim();
+        }
+
+        function requireOperatorName() {
+            const name = getOperatorName();
+            if (!name) {
+                showMessage('work', 'Sign in with your name before starting a job', 'error');
+                document.getElementById('operator-name').focus();
+                return null;
+            }
+            localStorage.setItem(OPERATOR_NAME_KEY, name);
+            return name;
+        }
+
+        document.getElementById('operator-name').addEventListener('change', (e) => {
+            const name = e.target.value.trim();
+            if (name) localStorage.setItem(OPERATOR_NAME_KEY, name);
+        });
+
+        async function loadWork() {
+            const savedName = localStorage.getItem(OPERATOR_NAME_KEY) || '';
+            const nameField = document.getElementById('operator-name');
+            if (!nameField.value) nameField.value = savedName;
+
+            const response = await fetch(`${API_BASE}/jobs`);
+            const jobs = await response.json();
+            const currentName = getOperatorName().toLowerCase();
+
+            const activeTbody = document.getElementById('work-active-table');
+            const myActiveJobs = jobs.filter(j => j.status === 'in_progress' &&
+                currentName && (j.assigned_device_id || '').toLowerCase() === currentName);
+            activeTbody.innerHTML = myActiveJobs.map(j => `
+                <tr>
+                    <td>${j.id}</td>
+                    <td>${escapeHtml(j.product_code)} - ${escapeHtml(j.product_name)}</td>
+                    <td>${escapeHtml(j.operation_name)}</td>
+                    <td>${escapeHtml(j.batch_number)}</td>
+                    <td>${j.quantity}</td>
+                    <td>${Math.round((j.elapsed_seconds || 0) / 60)}</td>
+                    <td class="action-buttons">
+                        <button onclick="pauseWorkJob(${j.id})">Pause</button>
+                        <button onclick="completeWorkJob(${j.id})">Complete</button>
+                    </td>
+                </tr>
+            `).join('') || '<tr><td colspan="7">No active jobs. Sign in above and start one below.</td></tr>';
+
+            const availableTbody = document.getElementById('work-available-table');
+            const availableJobs = jobs.filter(j => j.status === 'pending' || j.status === 'paused');
+            availableTbody.innerHTML = availableJobs.map(j => `
+                <tr>
+                    <td>${j.id}</td>
+                    <td>${escapeHtml(j.product_code)} - ${escapeHtml(j.product_name)}</td>
+                    <td>${escapeHtml(j.operation_name)}</td>
+                    <td>${escapeHtml(j.batch_number)}</td>
+                    <td>${j.quantity}</td>
+                    <td><span class="badge ${j.status}">${j.status}</span>${j.status === 'paused' && j.assigned_device_id ? ` (was ${escapeHtml(j.assigned_device_id)})` : ''}</td>
+                    <td class="action-buttons"><button onclick="startWorkJob(${j.id})">Start</button></td>
+                </tr>
+            `).join('') || '<tr><td colspan="7">No jobs waiting. Create one in the Jobs tab.</td></tr>';
+        }
+
+        async function startWorkJob(jobId) {
+            const name = requireOperatorName();
+            if (!name) return;
+
+            const assignResponse = await fetch(`${API_BASE}/jobs/${jobId}/assign`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device_id: name })
+            });
+            if (!assignResponse.ok) {
+                const error = await assignResponse.json();
+                showMessage('work', `✗ Error: ${error.error}`, 'error');
+                return;
+            }
+
+            const startResponse = await fetch(`${API_BASE}/jobs/${jobId}/start`, { method: 'PUT' });
+            if (startResponse.ok) {
+                showMessage('work', `✓ Job #${jobId} started`, 'success');
+                loadWork();
+                loadDashboard();
+            } else {
+                const error = await startResponse.json();
+                showMessage('work', `✗ Error: ${error.error}`, 'error');
+            }
+        }
+
+        async function pauseWorkJob(jobId) {
+            const response = await fetch(`${API_BASE}/jobs/${jobId}/pause`, { method: 'PUT' });
+            if (response.ok) {
+                showMessage('work', `Job #${jobId} paused`, 'success');
+                loadWork();
+                loadDashboard();
+            } else {
+                const error = await response.json();
+                showMessage('work', `✗ Error: ${error.error}`, 'error');
+            }
+        }
+
+        async function completeWorkJob(jobId) {
+            if (!confirm('Mark this job complete? This consumes inventory if it is the product\'s final operation.')) return;
+            const name = getOperatorName();
+
+            const response = await fetch(`${API_BASE}/jobs/${jobId}/complete`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device_id: name || 'dashboard' })
+            });
+            if (response.ok) {
+                showMessage('work', `✓ Job #${jobId} completed`, 'success');
+                loadWork();
+                loadDashboard();
+            } else {
+                const error = await response.json();
+                showMessage('work', `✗ Error: ${error.error}`, 'error');
+            }
+        }
+
         // Auto-load dashboard on startup
         loadDashboard();
         loadParts();
