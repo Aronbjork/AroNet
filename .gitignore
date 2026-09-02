@@ -1,1 +1,4 @@
 main/aronet_device_config.h
+__pycache__/
+*.pyc
+backend/inventory.db

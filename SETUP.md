@@ -200,11 +200,17 @@ job history survive every deploy.
 
 ```powershell
 cd d:\Programmering\AroNet
-git status                       # see what changed
-git add backend SETUP.md         # stage the files you actually changed
+git status                                 # see what changed
+git add backend/app.py backend/templates/dashboard.html
 git commit -m "Describe the change"
 git push
 ```
+
+Name the files you changed rather than staging a whole folder. `git add backend`
+also stages anything new that happens to be sitting in it, and committing
+`backend/__pycache__/*.pyc` breaks the next `git pull` on the Pi, which has its
+own copies of those files. `.gitignore` now excludes `__pycache__/`, `*.pyc`, and
+`backend/inventory.db`.
 
 ### 2. Pull on the Pi
 
@@ -246,6 +252,31 @@ curl -s http://127.0.0.1:5000/api/production-times/export.csv | head -3
 ```
 
 Then open `http://<pi-ip>:5000` from a browser on the same network.
+
+### If `git pull` says untracked files would be overwritten
+
+```
+error: The following untracked working tree files would be overwritten by merge:
+        backend/__pycache__/app.cpython-313.pyc
+```
+
+Python's compiled bytecode cache got committed from Windows, and the Pi has its
+own copy of the same files. The Pi's copies are throwaway — Python regenerates
+them on the next start:
+
+```bash
+rm -rf ~/AroNet/backend/__pycache__
+git pull
+```
+
+Then make sure those files are out of the repo for good, so it cannot happen
+again (they are in `.gitignore` as of this commit):
+
+```powershell
+git rm -r --cached backend/__pycache__
+git commit -m "Stop tracking Python bytecode cache"
+git push
+```
 
 ### If `git pull` refuses to run
 
