@@ -72,6 +72,10 @@ static void style_list_row(lv_obj_t *row)
     lv_obj_set_style_bg_color(row, lv_color_hex(0x242424), LV_PART_MAIN | LV_STATE_PRESSED);
     lv_obj_set_style_text_color(row, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_border_color(row, lv_color_hex(0x303030), LV_PART_MAIN);
+    lv_obj_set_style_text_font(row, &swedish_font_24, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(row, 14, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(row, 14, LV_PART_MAIN);
+    lv_obj_set_style_min_height(row, 76, LV_PART_MAIN);
 }
 
 static void init_swedish_fonts(void)
