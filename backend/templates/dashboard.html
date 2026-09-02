@@ -41,8 +41,10 @@
             gap: 10px;
             border-bottom: 2px solid #eee;
             margin-top: 20px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
-        
+
         .nav-tabs button {
             padding: 10px 20px;
             border: none;
@@ -52,6 +54,8 @@
             font-size: 16px;
             border-bottom: 3px solid transparent;
             transition: all 0.3s;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
         
         .nav-tabs button.active {
@@ -103,11 +107,14 @@
             background: white;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
         }
-        
+
         table {
             width: 100%;
+            min-width: 640px;
             border-collapse: collapse;
         }
         
@@ -161,7 +168,8 @@
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 4px;
-            font-size: 14px;
+            /* 16px stops iOS Safari auto-zooming the page when a field is focused */
+            font-size: 16px;
             font-family: inherit;
         }
         
@@ -275,13 +283,35 @@
             .form-row {
                 grid-template-columns: 1fr;
             }
-            
+
             .stats-grid {
                 grid-template-columns: 1fr;
             }
-            
-            .nav-tabs {
-                overflow-x: auto;
+
+            .bom-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 10px;
+            }
+
+            header, .form-section {
+                padding: 16px;
+            }
+
+            .stat-card {
+                padding: 14px;
+            }
+
+            .stat-card .value {
+                font-size: 26px;
+            }
+
+            h1 {
+                font-size: 22px;
             }
         }
     </style>
