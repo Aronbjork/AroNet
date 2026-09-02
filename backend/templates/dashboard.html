@@ -324,17 +324,17 @@
             <p><a href="/api/inventory/export.csv">Export inventory CSV</a></p>
             
             <div class="nav-tabs">
-                <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+                <button class="tab-btn active" data-tab="work">Work</button>
+                <button class="tab-btn" data-tab="dashboard">Dashboard</button>
                 <button class="tab-btn" data-tab="parts">Parts</button>
                 <button class="tab-btn" data-tab="operations">Operations</button>
                 <button class="tab-btn" data-tab="products">Products</button>
                 <button class="tab-btn" data-tab="jobs">Jobs</button>
-                <button class="tab-btn" data-tab="work">Work</button>
             </div>
         </header>
         
         <!-- DASHBOARD TAB -->
-        <div id="dashboard" class="content active">
+        <div id="dashboard" class="content">
             <div id="message-dashboard" class="message"></div>
             
             <div class="stats-grid">
@@ -606,7 +606,7 @@
         </div>
 
         <!-- WORK TAB -->
-        <div id="work" class="content">
+        <div id="work" class="content active">
             <div id="message-work" class="message"></div>
 
             <div class="form-section">
@@ -1206,7 +1206,10 @@
             }
         }
 
-        // Auto-load dashboard on startup
+        // Auto-load on startup. Work is the default visible tab, so it loads eagerly
+        // too; the others stay lazy (loaded when their tab is first clicked) except
+        // these, which populate selects/lookups other tabs depend on.
+        loadWork();
         loadDashboard();
         loadParts();
         loadOperations();
