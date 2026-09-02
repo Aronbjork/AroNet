@@ -141,13 +141,21 @@ def delete_operation(operation_id):
     """Delete an operation that is not in a product workflow or job queue."""
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM product_operations WHERE operation_id = ?", (operation_id,))
-    mapped_products = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM job_queue WHERE operation_id = ?", (operation_id,))
-    queued_jobs = c.fetchone()[0]
-    if mapped_products or queued_jobs:
+    c.execute("""SELECT p.product_code FROM products p
+                 JOIN product_operations po ON po.product_id = p.id
+                 WHERE po.operation_id = ? ORDER BY p.product_code""", (operation_id,))
+    mapped_products = [row['product_code'] for row in c.fetchall()]
+    c.execute("SELECT status, COUNT(*) FROM job_queue WHERE operation_id = ? GROUP BY status", (operation_id,))
+    jobs_by_status = {row['status']: row[1] for row in c.fetchall()}
+    if mapped_products or jobs_by_status:
         conn.close()
-        return jsonify({'error': 'Remove this operation from products and delete its jobs before deleting it'}), 409
+        reasons = []
+        if mapped_products:
+            reasons.append('used by product(s) ' + ', '.join(mapped_products))
+        if jobs_by_status:
+            job_summary = ', '.join(f'{count} {status}' for status, count in jobs_by_status.items())
+            reasons.append(f'has job(s) in the queue ({job_summary}) - including completed/cancelled jobs kept for history; delete them from the Jobs tab first')
+        return jsonify({'error': 'Cannot delete this operation: ' + '; '.join(reasons)}), 409
     c.execute("DELETE FROM operations WHERE id = ?", (operation_id,))
     if not c.rowcount:
         conn.close()
