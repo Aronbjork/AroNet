@@ -305,6 +305,17 @@ def delete_product(product_id):
     return jsonify({'status': 'deleted'})
 
 # --- JOB QUEUE ---
+def next_batch_number(cursor, now=None):
+    """Build a short batch number for today, such as BATCH-260902-01."""
+    prefix = 'BATCH-' + (now or datetime.now()).strftime('%y%m%d')
+    cursor.execute("SELECT batch_number FROM job_queue WHERE batch_number LIKE ?", (prefix + '-%',))
+    highest = 0
+    for row in cursor.fetchall():
+        suffix = row['batch_number'].rsplit('-', 1)[-1]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return f'{prefix}-{highest + 1:02d}'
+
 @app.route('/api/jobs', methods=['GET'])
 def get_jobs():
     """Get job queue (with optional filtering by device or status)."""
@@ -347,14 +358,14 @@ def create_jobs():
     data = request.json
     product_id = data.get('product_id')
     quantity = data.get('quantity', 1)
-    batch_number = data.get('batch_number', f"BATCH-{datetime.now().strftime('%Y%m%d%H%M%S')}")
 
     if not isinstance(quantity, int) or quantity < 1:
         return jsonify({'error': 'Quantity must be a positive whole number'}), 400
-    
+
     conn = get_db()
     c = conn.cursor()
-    
+    batch_number = (data.get('batch_number') or '').strip() or next_batch_number(c)
+
     # Get operations for this product
     c.execute("""SELECT o.id FROM operations o 
                  JOIN product_operations po ON o.id = po.operation_id 
