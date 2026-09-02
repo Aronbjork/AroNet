@@ -11,7 +11,7 @@
  * - Inventory updates
  * 
  * Usage:
- *   aronet_device_init("192.168.1.100", 5000, "DISPLAY-01");
+ *   aronet_device_init("aronet.local", 5000, "DISPLAY-01");
  *   aronet_get_next_job(&job);
  *   aronet_start_job(job.id);
  *   aronet_complete_job(job.id);
@@ -83,13 +83,17 @@ typedef enum {
 
 /**
  * Initialize device connection to AroNet server
- * 
- * @param server_ip    IP address of backend server (e.g., "192.168.1.100")
+ *
+ * @param server_host  Hostname (e.g., "aronet.local") or IP address of the backend server.
+ *                     A ".local" mDNS hostname survives the server's IP address changing;
+ *                     it requires the ESP32's LWIP_DNS_SUPPORT_MDNS_QUERIES option (already
+ *                     enabled in sdkconfig) and an mDNS responder on the server (avahi-daemon
+ *                     ships enabled by default on Raspberry Pi OS).
  * @param port         Port number (default 5000)
  * @param device_id    Unique device identifier (e.g., "DISPLAY-01")
  * @return ARONET_OK on success
  */
-aronet_error_t aronet_device_init(const char *server_ip, uint16_t port, const char *device_id);
+aronet_error_t aronet_device_init(const char *server_host, uint16_t port, const char *device_id);
 
 /** Connect the display to its configured Wi-Fi network. */
 aronet_error_t aronet_wifi_connect(const char *ssid, const char *password);

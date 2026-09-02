@@ -92,8 +92,8 @@ Add to your existing main.c:
 void app_main(void) {
     // ...existing init...
     
-    // Initialize AroNet
-    aronet_device_setup("DISPLAY-01", "192.168.1.100");  // Change IP to your backend
+    // Initialize AroNet (see main/aronet_device_config.h for the real, per-device values)
+    aronet_device_init(ARONET_SERVER_HOST, 5000, ARONET_DEVICE_ID);
     
     // Main loop
     while (1) {
@@ -148,10 +148,60 @@ When ready to deploy to RPi:
    python3 app.py
    ```
 
-5. Update ESP32 to use RPi IP (instead of localhost):
-   ```c
-   aronet_device_setup("DISPLAY-01", "192.168.1.X");  // RPi IP
-   ```
+5. Point the ESP32 devices at the Pi (see "Server Hostname for ESP32 Devices" below
+   for why `ARONET_SERVER_HOST` in `main/aronet_device_config.h` should be a hostname,
+   not an IP address).
+
+## Server Hostname for ESP32 Devices (mDNS)
+
+`main/aronet_device_config.h` (gitignored, one copy per device) has:
+
+```c
+#define ARONET_SERVER_HOST "aronet.local"
+```
+
+Displays resolve `.local` names via mDNS instead of a hard-coded IP, so a DHCP lease
+renewal on the Pi no longer breaks every display — nothing on the ESP32 side needs
+reflashing. This works because:
+
+- The ESP32 already has `CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES=y` in `sdkconfig`, which
+  makes lwIP resolve any `.local` hostname over mDNS automatically — no extra component
+  or code beyond passing a `.local` string to `aronet_device_init()` (see `main.c`).
+- Raspberry Pi OS advertises the Pi's hostname over mDNS via `avahi-daemon`, which is
+  enabled by default.
+
+### Confirm the Pi's mDNS name
+
+```bash
+hostname          # e.g. "Aronet" -> advertised as Aronet.local (mDNS names are case-insensitive)
+systemctl status avahi-daemon    # should be active (running); Raspberry Pi OS enables it by default
+```
+
+If `hostname` prints something other than `aronet`, either change
+`ARONET_SERVER_HOST` in `aronet_device_config.h` to match, or rename the Pi:
+
+```bash
+sudo raspi-config nonint do_hostname aronet
+sudo reboot
+```
+
+From a machine on the same network (including the ESP32), the Pi should now answer to
+`aronet.local`:
+
+```bash
+ping aronet.local
+```
+
+### Every display needs this edit by hand
+
+`aronet_device_config.h` is gitignored on purpose — it holds each display's Wi-Fi
+password — so `git pull` never touches it. If you have more than one display already
+flashed with a hard-coded IP in `ARONET_SERVER_HOST` (or the old `ARONET_SERVER_IP`),
+edit that file on each one and reflash:
+
+```powershell
+idf.py build flash
+```
 
 ## Start AroNet Automatically on Raspberry Pi
 

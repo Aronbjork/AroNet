@@ -173,12 +173,12 @@ aronet_error_t aronet_wifi_connect(const char *ssid, const char *password)
     return ARONET_OK;
 }
 
-aronet_error_t aronet_device_init(const char *server_ip, uint16_t port, const char *device_id)
+aronet_error_t aronet_device_init(const char *server_host, uint16_t port, const char *device_id)
 {
-    if (!server_ip || !device_id) {
+    if (!server_host || !device_id) {
         return ARONET_ERR_NETWORK;
     }
-    snprintf(server_url, sizeof(server_url), "http://%s:%u/api", server_ip, port);
+    snprintf(server_url, sizeof(server_url), "http://%s:%u/api", server_host, port);
     snprintf(configured_device_id, sizeof(configured_device_id), "%s", device_id);
     return ARONET_OK;
 }

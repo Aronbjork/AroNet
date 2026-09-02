@@ -49,7 +49,7 @@ void app_main(void)
     if (ret != ARONET_OK) {
         ESP_LOGW(TAG, "Wi-Fi is not configured; update aronet_device_config.h before deploying");
     }
-    ESP_ERROR_CHECK(aronet_device_init(ARONET_SERVER_IP, 5000, ARONET_DEVICE_ID) == ARONET_OK
+    ESP_ERROR_CHECK(aronet_device_init(ARONET_SERVER_HOST, 5000, ARONET_DEVICE_ID) == ARONET_OK
                     ? ESP_OK : ESP_FAIL);
 
     aronet_gui_init();

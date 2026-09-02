@@ -72,10 +72,10 @@ static void style_list_row(lv_obj_t *row)
     lv_obj_set_style_bg_color(row, lv_color_hex(0x242424), LV_PART_MAIN | LV_STATE_PRESSED);
     lv_obj_set_style_text_color(row, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     lv_obj_set_style_border_color(row, lv_color_hex(0x303030), LV_PART_MAIN);
-    lv_obj_set_style_text_font(row, &swedish_font_24, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(row, 14, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(row, 14, LV_PART_MAIN);
-    lv_obj_set_style_min_height(row, 76, LV_PART_MAIN);
+    lv_obj_set_style_text_font(row, &font_multilang_small, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(row, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(row, 10, LV_PART_MAIN);
+    lv_obj_set_style_min_height(row, 58, LV_PART_MAIN);
 }
 
 static void init_swedish_fonts(void)
@@ -330,6 +330,7 @@ static void show_queue(uint32_t tab_index)
     lv_obj_set_style_bg_color(tabview, lv_color_hex(0x000000), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(tabview, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_add_event_cb(tabview, tab_changed_event, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_remove_flag(lv_tabview_get_content(tabview), LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *jobs_tab = lv_tabview_add_tab(tabview, "Jobs");
     lv_obj_t *inventory_tab = lv_tabview_add_tab(tabview, "Inventory");
     lv_obj_set_style_bg_color(jobs_tab, lv_color_hex(0x000000), LV_PART_MAIN);
