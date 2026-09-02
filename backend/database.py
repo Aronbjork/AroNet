@@ -138,18 +138,18 @@ def seed_demo_data():
                   ("PN-WIRING-KIT", "Wiring Kit", "Complete wiring harness", 80, 5))
         
         # Demo operations
-        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
-                  ("Laser Cutting", "Cut metal components", 15))
-        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
-                  ("Bending", "Bend steel components", 20))
-        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
-                  ("Wiring", "Install electrical wiring", 30))
-        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
-                  ("Assembly", "Assemble sub-assemblies", 45))
-        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
-                  ("Final Assembly", "Final product assembly", 60))
-        c.execute("INSERT OR IGNORE INTO operations (name, description, estimated_time_minutes) VALUES (?, ?, ?)",
-                  ("Inspection", "Quality inspection", 20))
+        c.execute("INSERT OR IGNORE INTO operations (name, description) VALUES (?, ?)",
+                  ("Laser Cutting", "Cut metal components"))
+        c.execute("INSERT OR IGNORE INTO operations (name, description) VALUES (?, ?)",
+                  ("Bending", "Bend steel components"))
+        c.execute("INSERT OR IGNORE INTO operations (name, description) VALUES (?, ?)",
+                  ("Wiring", "Install electrical wiring"))
+        c.execute("INSERT OR IGNORE INTO operations (name, description) VALUES (?, ?)",
+                  ("Assembly", "Assemble sub-assemblies"))
+        c.execute("INSERT OR IGNORE INTO operations (name, description) VALUES (?, ?)",
+                  ("Final Assembly", "Final product assembly"))
+        c.execute("INSERT OR IGNORE INTO operations (name, description) VALUES (?, ?)",
+                  ("Inspection", "Quality inspection"))
         
         # Demo product: CS20
         c.execute("INSERT OR IGNORE INTO products (product_code, name, quantity_to_build) VALUES (?, ?, ?)",

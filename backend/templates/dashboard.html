@@ -333,9 +333,25 @@
                     <div class="value" id="stat-devices">0</div>
                 </div>
             </div>
-            
+
+            <div class="form-section">
+                <h2>Full Database Backup</h2>
+                <p>Downloads every table (parts, operations, products, jobs, and history) as one zip file. Keep these somewhere safe and grab a fresh one periodically.</p>
+                <p><a href="/api/backup/export.zip">Download full backup (.zip)</a></p>
+
+                <h3 style="margin-top: 20px;">Restore from Backup</h3>
+                <p><strong>Warning:</strong> restoring replaces every part, operation, product, and job currently in the system with the contents of the backup file. Anything added since that backup was taken is permanently lost. This cannot be undone.</p>
+                <form id="restore-backup-form">
+                    <div class="form-group">
+                        <label>Backup file (.zip)</label>
+                        <input type="file" name="file" accept=".zip" required>
+                    </div>
+                    <button type="submit" class="secondary">Restore (Replace All Data)</button>
+                </form>
+            </div>
+
         </div>
-        
+
         <!-- PARTS TAB -->
         <div id="parts" class="content">
             <div id="message-parts" class="message"></div>
@@ -415,10 +431,6 @@
                         <label>Description</label>
                         <textarea name="description" placeholder="Operation description..."></textarea>
                     </div>
-                    <div class="form-group">
-                        <label>Estimated Time (minutes)</label>
-                        <input type="number" name="estimated_time_minutes" value="30" min="1">
-                    </div>
                     <button type="submit">Add Operation</button>
                 </form>
             </div>
@@ -429,7 +441,6 @@
                         <tr>
                             <th>Name</th>
                             <th>Description</th>
-                            <th>Est. Time (min)</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -712,9 +723,41 @@
             document.getElementById('stat-progress').textContent = stats.in_progress_jobs;
             document.getElementById('stat-completed').textContent = stats.completed_jobs;
             document.getElementById('stat-devices').textContent = stats.devices_connected;
-            
+
         }
-        
+
+        document.getElementById('restore-backup-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = e.target.querySelector('input[name="file"]');
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const warning = `Restore from "${file.name}"?\n\nThis REPLACES every part, operation, product, and job currently in the system with what's in this backup. Anything added since that backup was taken will be permanently lost.\n\nThis cannot be undone.`;
+            if (!confirm(warning)) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('confirm', 'REPLACE ALL DATA');
+
+            const response = await fetch(`${API_BASE}/backup/import.zip`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                showMessage('dashboard', `✓ Database restored: ${JSON.stringify(result.rows)}`, 'success');
+                e.target.reset();
+                loadDashboard();
+                loadParts();
+                loadOperations();
+                loadProducts();
+            } else {
+                const error = await response.json();
+                showMessage('dashboard', `✗ Restore failed: ${error.error}`, 'error');
+            }
+        });
+
         // PARTS
         async function loadParts() {
             const response = await fetch(`${API_BASE}/parts`);
@@ -783,22 +826,20 @@
                 <tr>
                     <td><strong>${o.name}</strong></td>
                     <td>${o.description || '-'}</td>
-                    <td>${o.estimated_time_minutes}</td>
                     <td><button class="secondary" onclick="deleteOperation(${o.id}, '${o.name}')">Delete</button></td>
                 </tr>
             `).join('');
-            
+
             // Update product form select
             const select = document.querySelector('select[name="operation_ids"]');
-            select.innerHTML = ops.map(o => `<option value="${o.id}">${o.name} (${o.estimated_time_minutes}min)</option>`).join('');
+            select.innerHTML = ops.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
         }
-        
+
         document.getElementById('add-operation-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData);
-            data.estimated_time_minutes = parseInt(data.estimated_time_minutes);
-            
+
             const response = await fetch(`${API_BASE}/operations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

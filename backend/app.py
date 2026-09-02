@@ -5,6 +5,7 @@ from datetime import datetime
 import csv
 import io
 import json
+import zipfile
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
@@ -125,9 +126,8 @@ def create_operation():
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute("""INSERT INTO operations (name, description, estimated_time_minutes) 
-                     VALUES (?, ?, ?)""",
-                  (data.get('name'), data.get('description', ''), data.get('estimated_time_minutes', 30)))
+        c.execute("INSERT INTO operations (name, description) VALUES (?, ?)",
+                  (data.get('name'), data.get('description', '')))
         conn.commit()
         op_id = c.lastrowid
         conn.close()
@@ -665,22 +665,20 @@ def csv_response(rows, header, filename):
 
 PRODUCTION_TIME_HEADER = [
     'job_id', 'batch_number', 'product_code', 'product_name', 'operation', 'quantity',
-    'status', 'device', 'estimated_minutes_per_unit', 'estimated_minutes_total',
-    'actual_minutes', 'actual_minutes_per_unit', 'actual_seconds',
+    'status', 'device', 'actual_minutes', 'actual_minutes_per_unit', 'actual_seconds',
     'created_at', 'started_at', 'completed_at',
 ]
 
 @app.route('/api/production-times/export.csv', methods=['GET'])
 def export_production_times_csv():
-    """Export estimated and actual production time per job."""
+    """Export actual production time per job."""
     status = request.args.get('status')
 
     conn = get_db()
     c = conn.cursor()
     query = """SELECT j.id, j.batch_number, j.quantity, j.status, j.assigned_device_id,
                       j.elapsed_seconds, j.created_at, j.started_at, j.completed_at,
-                      p.product_code, p.name AS product_name,
-                      o.name AS operation_name, o.estimated_time_minutes,
+                      p.product_code, p.name AS product_name, o.name AS operation_name,
                       CASE WHEN j.status = 'in_progress' AND j.started_at IS NOT NULL
                            THEN CAST((julianday('now') - julianday(j.started_at)) * 86400 AS INTEGER)
                            ELSE 0 END AS running_seconds
@@ -707,7 +705,6 @@ def export_production_times_csv():
         rows.append([
             job['id'], job['batch_number'], job['product_code'], job['product_name'],
             job['operation_name'], quantity, job['status'], job['assigned_device_id'] or '',
-            job['estimated_time_minutes'], job['estimated_time_minutes'] * quantity,
             actual_minutes, round(actual_minutes / quantity, 2), actual_seconds,
             job['created_at'] or '', job['started_at'] or '', job['completed_at'] or '',
         ])
@@ -865,6 +862,108 @@ def import_products_csv():
         return jsonify({'error': str(error)}), 400
     conn.close()
     return jsonify({'status': 'imported', 'created': created, 'updated': updated})
+
+# --- FULL DATABASE BACKUP ---
+# One CSV per table, zipped together. Unlike the parts/products CSVs above (which
+# add or update specific rows), this pair is a full snapshot: export captures every
+# table exactly as it is, and import (restore) WIPES the current database and
+# replaces it with the snapshot's contents, including primary keys, so relationships
+# between tables (e.g. which parts a product needs) come back intact.
+BACKUP_TABLES = ['parts', 'operations', 'products', 'product_operations', 'product_parts',
+                  'job_queue', 'device_status', 'audit_log']
+
+@app.route('/api/backup/export.zip', methods=['GET'])
+def export_backup_zip():
+    """Export the entire database as one CSV per table inside a zip file."""
+    conn = get_db()
+    c = conn.cursor()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for table in BACKUP_TABLES:
+            c.execute(f"SELECT * FROM {table}")
+            rows = c.fetchall()
+            columns = [d[0] for d in c.description]
+            csv_buffer = io.StringIO()
+            writer = csv.writer(csv_buffer, delimiter=';')
+            writer.writerow(columns)
+            writer.writerows(tuple(row) for row in rows)
+            zf.writestr(f'{table}.csv', '\ufeff' + csv_buffer.getvalue())
+    conn.close()
+
+    filename = f"aronet-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+    return Response(buffer.getvalue(), content_type='application/zip', headers={
+        'Content-Disposition': f'attachment; filename={filename}'
+    })
+
+@app.route('/api/backup/import.zip', methods=['POST'])
+def import_backup_zip():
+    """Restore the entire database from a backup zip. This replaces all current data."""
+    uploaded_file = request.files.get('file')
+    if not uploaded_file or not uploaded_file.filename:
+        return jsonify({'error': 'Choose a backup .zip file to restore'}), 400
+    if (request.form.get('confirm') or '') != 'REPLACE ALL DATA':
+        return jsonify({'error': 'Restoring replaces all current data. Confirm to proceed.'}), 400
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(uploaded_file.read()))
+    except zipfile.BadZipFile:
+        return jsonify({'error': 'That file is not a valid AroNet backup (.zip)'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Read and validate every table before changing anything, so a bad file never
+    # leaves the database half-restored.
+    table_rows = {}
+    for table in BACKUP_TABLES:
+        entry_name = f'{table}.csv'
+        if entry_name not in zf.namelist():
+            conn.close()
+            return jsonify({'error': f'Backup is missing {entry_name}'}), 400
+        try:
+            content = zf.read(entry_name).decode('utf-8-sig')
+        except UnicodeDecodeError:
+            conn.close()
+            return jsonify({'error': f'{entry_name} must be UTF-8 encoded'}), 400
+        rows = list(csv.reader(io.StringIO(content), delimiter=';'))
+        if not rows:
+            conn.close()
+            return jsonify({'error': f'{entry_name} has no header row'}), 400
+        header, data_rows = rows[0], rows[1:]
+
+        # Column names become part of the INSERT statement text below (SQLite can't
+        # parameterize identifiers), so only ever accept ones that already exist on
+        # the live table - this is what stops a crafted CSV header from injecting SQL.
+        c.execute(f"PRAGMA table_info({table})")
+        valid_columns = {row[1] for row in c.fetchall()}
+        unknown = [col for col in header if col not in valid_columns]
+        if unknown:
+            conn.close()
+            return jsonify({'error': f'{entry_name} has unknown column(s): {", ".join(unknown)}'}), 400
+
+        # An empty CSV cell must come back as SQL NULL, not the text "" - job_queue.started_at
+        # being NULL vs. empty string changes what pausing/completing a job computes.
+        data_rows = [[cell if cell != '' else None for cell in row] for row in data_rows]
+        table_rows[table] = (header, data_rows)
+
+    try:
+        for table in reversed(BACKUP_TABLES):
+            c.execute(f"DELETE FROM {table}")
+        for table in BACKUP_TABLES:
+            header, data_rows = table_rows[table]
+            if not data_rows:
+                continue
+            columns_sql = ', '.join(header)
+            placeholders = ', '.join('?' for _ in header)
+            c.executemany(f"INSERT INTO {table} ({columns_sql}) VALUES ({placeholders})", data_rows)
+        conn.commit()
+    except Exception as error:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': f'Restore failed, nothing was changed: {error}'}), 400
+
+    conn.close()
+    return jsonify({'status': 'restored', 'rows': {t: len(table_rows[t][1]) for t in BACKUP_TABLES}})
 
 @app.route('/api/dashboard/stats', methods=['GET'])
 def get_dashboard_stats():

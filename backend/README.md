@@ -41,8 +41,19 @@ The system will start at **http://localhost:5000**
 ### CSV Exports
 - `GET /api/inventory/export.csv` - Current stock in a Fortnox-mappable layout
 - `POST /api/inventory/import.csv` - Import stock levels
-- `GET /api/production-times/export.csv` - Estimated vs. actual time per job
+- `GET /api/production-times/export.csv` - Actual time per job
   (add `?status=completed` for finished jobs only)
+
+### Full Database Backup
+- `GET /api/backup/export.zip` - Every table as one CSV per file inside a zip -
+  a complete snapshot, not just parts or products.
+- `POST /api/backup/import.zip` - Restore from that zip. This **replaces every
+  row in every table** with the backup's contents, including primary keys, so
+  relationships (which parts a product needs, which jobs belong to which batch)
+  come back intact. Must be sent as multipart form data with the zip as `file`
+  and a form field `confirm` set to exactly `REPLACE ALL DATA`, or the request
+  is rejected - this isn't a merge or an upsert like the parts/products CSVs,
+  it's a full restore.
 
 All CSV files are semicolon separated and UTF-8 with a BOM, so Excel opens them
 directly. The product CSV has one row per required part, repeating the product
@@ -81,7 +92,7 @@ id, part_number (unique), name, description, quantity, reorder_level, unit, crea
 
 ### Operations Table
 ```
-id, name (unique), description, estimated_time_minutes, created_at
+id, name (unique), description, created_at
 ```
 
 ### Products Table
