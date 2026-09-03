@@ -4,16 +4,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AroNet - Manufacturing Inventory System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* Ental Air brand palette (see Brand guide.pdf) */
+        :root {
+            --petrol-teal: #2D9488;
+            --petrol-teal-dark: #23786D;
+            --steel-grey: #4c5c5c;
+            --steel-grey-dark: #3a4646;
+            --light-gray: #F5F6F7;
+            --graphite: #333333;
+            --royal-blue: #0047AB;
+            --system-blue: #2196f3;
+            --soft-coral: #FF7F50;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Urbanist', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--light-gray);
+            color: var(--graphite);
             min-height: 100vh;
             padding: 20px;
         }
@@ -30,9 +47,31 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
+
+        .header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .brand-logo {
+            height: 42px;
+            width: auto;
+        }
+
+        .header-title {
+            text-align: right;
+        }
+
+        .header-title p {
+            color: #666;
+        }
         
         h1 {
-            color: #333;
+            color: var(--graphite);
+            font-weight: 700;
             margin-bottom: 10px;
         }
         
@@ -49,7 +88,7 @@
             padding: 10px 20px;
             border: none;
             background: none;
-            color: #333;
+            color: var(--graphite);
             cursor: pointer;
             font-size: 16px;
             border-bottom: 3px solid transparent;
@@ -59,12 +98,12 @@
         }
         
         .nav-tabs button.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
+            color: var(--petrol-teal);
+            border-bottom-color: var(--petrol-teal);
         }
         
         .nav-tabs button:hover {
-            color: #667eea;
+            color: var(--petrol-teal);
         }
         
         .content {
@@ -100,7 +139,7 @@
         .stat-card .value {
             font-size: 32px;
             font-weight: bold;
-            color: #667eea;
+            color: var(--petrol-teal);
         }
         
         .table-container {
@@ -127,7 +166,7 @@
             padding: 15px;
             text-align: left;
             font-weight: 600;
-            color: #333;
+            color: var(--graphite);
         }
         
         td {
@@ -149,7 +188,8 @@
         
         .form-section h2 {
             margin-bottom: 20px;
-            color: #333;
+            color: var(--graphite);
+            font-weight: 600;
         }
         
         .form-group {
@@ -180,8 +220,8 @@
         
         input:focus, select:focus, textarea:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: var(--petrol-teal);
+            box-shadow: 0 0 0 3px rgba(45, 148, 136, 0.15);
         }
         
         .form-row {
@@ -191,7 +231,7 @@
         }
         
         button {
-            background: #667eea;
+            background: var(--petrol-teal);
             color: white;
             padding: 10px 20px;
             border: none;
@@ -203,15 +243,15 @@
         }
         
         button:hover {
-            background: #5568d3;
+            background: var(--petrol-teal-dark);
         }
         
         button.secondary {
-            background: #6c757d;
+            background: var(--steel-grey);
         }
         
         button.secondary:hover {
-            background: #5a6268;
+            background: var(--steel-grey-dark);
         }
         
         .badge {
@@ -223,17 +263,17 @@
         }
         
         .badge.pending {
-            background: #ffc107;
-            color: #333;
-        }
-        
-        .badge.in-progress {
-            background: #17a2b8;
+            background: var(--soft-coral);
             color: white;
         }
-        
+
+        .badge.in-progress {
+            background: var(--system-blue);
+            color: white;
+        }
+
         .badge.completed {
-            background: #28a745;
+            background: var(--petrol-teal);
             color: white;
         }
 
@@ -326,16 +366,29 @@
             h1 {
                 font-size: 22px;
             }
+
+            .header-top {
+                justify-content: flex-start;
+            }
+
+            .header-title {
+                text-align: left;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🏭 AroNet Manufacturing System</h1>
-            <p>Industrial Inventory & Production Management</p>
+            <div class="header-top">
+                <img src="/static/ental-logo.svg" alt="Ental Air" class="brand-logo" onerror="this.style.display='none'">
+                <div class="header-title">
+                    <h1>AroNet</h1>
+                    <p>Industrial Inventory &amp; Production Management</p>
+                </div>
+            </div>
             <p><a href="/api/inventory/export.csv">Export inventory CSV</a></p>
-            
+
             <div class="nav-tabs">
                 <button class="tab-btn active" data-tab="work">Work</button>
                 <button class="tab-btn" data-tab="dashboard">Dashboard</button>
