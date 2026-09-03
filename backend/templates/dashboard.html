@@ -1087,17 +1087,20 @@
             const response = await fetch(`${API_BASE}/jobs`);
             const jobs = await response.json();
             const tbody = document.getElementById('jobs-table');
-            tbody.innerHTML = jobs.map(j => `
-                <tr>
+            // Stable sort: groups same-batch jobs together while keeping each
+            // batch's own jobs in their original (operation sequence) order.
+            const sortedJobs = [...jobs].sort((a, b) => (a.batch_number || '').localeCompare(b.batch_number || ''));
+            tbody.innerHTML = sortedJobs.map(j => `
+                <tr style="background: ${colorForBatch(j.batch_number)}">
                     <td>${j.id}</td>
-                    <td>${j.product_code}</td>
-                    <td>${j.product_name}</td>
-                    <td>${j.operation_name}</td>
-                    <td>${j.batch_number}</td>
+                    <td>${escapeHtml(j.product_code)}</td>
+                    <td>${escapeHtml(j.product_name)}</td>
+                    <td>${escapeHtml(j.operation_name)}</td>
+                    <td>${escapeHtml(j.batch_number)}</td>
                     <td>${j.quantity}</td>
                     <td>${Math.round((j.elapsed_seconds || 0) / 60)}</td>
                     <td><span class="badge ${j.status}">${j.status}</span></td>
-                    <td>${j.assigned_device_id || '-'}</td>
+                    <td>${j.assigned_device_id ? escapeHtml(j.assigned_device_id) : '-'}</td>
                     <td>${j.started_at ? new Date(j.started_at).toLocaleString() : '-'}</td>
                     <td>${j.completed_at ? new Date(j.completed_at).toLocaleString() : '-'}</td>
                     <td><button class="secondary" onclick="deleteJob(${j.id})">Delete</button></td>
