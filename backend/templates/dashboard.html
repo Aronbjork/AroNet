@@ -694,6 +694,7 @@
 
             <div class="form-section">
                 <h2>Your Active Jobs</h2>
+                <p>Working alongside someone else on the same job is fine - anyone signed in can join a job that's already in progress.</p>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -704,6 +705,7 @@
                                 <th>Batch</th>
                                 <th>Quantity</th>
                                 <th>Time (min)</th>
+                                <th>Working On It</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -725,6 +727,7 @@
                                 <th>Batch</th>
                                 <th>Quantity</th>
                                 <th>Status</th>
+                                <th>Working On It</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -1154,7 +1157,7 @@
                     <td>${j.quantity}</td>
                     <td>${Math.round((j.elapsed_seconds || 0) / 60)}</td>
                     <td><span class="badge ${j.status}">${j.status}</span></td>
-                    <td>${j.assigned_device_id ? escapeHtml(j.assigned_device_id) : '-'}</td>
+                    <td>${(j.workers || []).length ? j.workers.map(escapeHtml).join(', ') : (j.assigned_device_id ? escapeHtml(j.assigned_device_id) : '-')}</td>
                     <td>${j.started_at ? new Date(j.started_at).toLocaleString() : '-'}</td>
                     <td>${j.completed_at ? new Date(j.completed_at).toLocaleString() : '-'}</td>
                     <td><button class="secondary" onclick="deleteJob(${j.id})">Delete</button></td>
@@ -1239,10 +1242,11 @@
             const response = await fetch(`${API_BASE}/jobs`);
             const jobs = await response.json();
             const currentName = getOperatorName().toLowerCase();
+            const isJoined = (job) => currentName &&
+                (job.workers || []).some(w => w.toLowerCase() === currentName);
 
             const activeTbody = document.getElementById('work-active-table');
-            const myActiveJobs = jobs.filter(j => j.status === 'in_progress' &&
-                currentName && (j.assigned_device_id || '').toLowerCase() === currentName);
+            const myActiveJobs = jobs.filter(j => j.status === 'in_progress' && isJoined(j));
             activeTbody.innerHTML = myActiveJobs.map(j => `
                 <tr>
                     <td>${j.id}</td>
@@ -1251,15 +1255,21 @@
                     <td>${escapeHtml(j.batch_number)}</td>
                     <td>${j.quantity}</td>
                     <td>${Math.round((j.elapsed_seconds || 0) / 60)}</td>
+                    <td>${(j.workers || []).map(escapeHtml).join(', ') || '-'}</td>
                     <td class="action-buttons">
+                        <button class="secondary" onclick="leaveWorkJob(${j.id})">Leave</button>
                         <button onclick="pauseWorkJob(${j.id})">Pause</button>
                         <button onclick="completeWorkJob(${j.id})">Complete</button>
                     </td>
                 </tr>
-            `).join('') || '<tr><td colspan="7">No active jobs. Sign in above and start one below.</td></tr>';
+            `).join('') || '<tr><td colspan="8">No active jobs. Sign in above and start or join one below.</td></tr>';
 
             const availableTbody = document.getElementById('work-available-table');
-            const availableJobs = jobs.filter(j => j.status === 'pending' || j.status === 'paused')
+            // Anyone can join an in-progress job too, not just claim a fresh one -
+            // that's what lets two people work the same job at once.
+            const availableJobs = jobs.filter(j =>
+                (j.status === 'pending' || j.status === 'paused' ||
+                 (j.status === 'in_progress' && !isJoined(j))))
                 // Stable sort: groups same-batch jobs together while keeping each
                 // batch's own jobs in their original (operation sequence) order.
                 .sort((a, b) => (a.batch_number || '').localeCompare(b.batch_number || ''));
@@ -1270,34 +1280,46 @@
                     <td>${escapeHtml(j.operation_name)}</td>
                     <td>${escapeHtml(j.batch_number)}</td>
                     <td>${j.quantity}</td>
-                    <td><span class="badge ${j.status}">${j.status}</span>${j.status === 'paused' && j.assigned_device_id ? ` (was ${escapeHtml(j.assigned_device_id)})` : ''}</td>
-                    <td class="action-buttons"><button onclick="startWorkJob(${j.id})">Start</button></td>
+                    <td><span class="badge ${j.status}">${j.status}</span></td>
+                    <td>${(j.workers || []).map(escapeHtml).join(', ') || '-'}</td>
+                    <td class="action-buttons"><button onclick="startWorkJob(${j.id})">${(j.workers || []).length ? 'Join' : 'Start'}</button></td>
                 </tr>
-            `).join('') || '<tr><td colspan="7">No jobs waiting. Create one in the Jobs tab.</td></tr>';
+            `).join('') || '<tr><td colspan="8">No jobs waiting. Create one in the Jobs tab.</td></tr>';
         }
 
         async function startWorkJob(jobId) {
             const name = requireOperatorName();
             if (!name) return;
 
-            const assignResponse = await fetch(`${API_BASE}/jobs/${jobId}/assign`, {
+            const response = await fetch(`${API_BASE}/jobs/${jobId}/join`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ device_id: name })
+                body: JSON.stringify({ worker_name: name })
             });
-            if (!assignResponse.ok) {
-                const error = await assignResponse.json();
-                showMessage('work', `✗ Error: ${error.error}`, 'error');
-                return;
-            }
-
-            const startResponse = await fetch(`${API_BASE}/jobs/${jobId}/start`, { method: 'PUT' });
-            if (startResponse.ok) {
-                showMessage('work', `✓ Job #${jobId} started`, 'success');
+            if (response.ok) {
+                showMessage('work', `✓ Job #${jobId} joined`, 'success');
                 loadWork();
                 loadDashboard();
             } else {
-                const error = await startResponse.json();
+                const error = await response.json();
+                showMessage('work', `✗ Error: ${error.error}`, 'error');
+            }
+        }
+
+        async function leaveWorkJob(jobId) {
+            const name = getOperatorName();
+            const response = await fetch(`${API_BASE}/jobs/${jobId}/leave`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ worker_name: name })
+            });
+            if (response.ok) {
+                const result = await response.json();
+                showMessage('work', `Job #${jobId} left` + (result.paused ? ' and paused (nobody else was on it)' : ''), 'success');
+                loadWork();
+                loadDashboard();
+            } else {
+                const error = await response.json();
                 showMessage('work', `✗ Error: ${error.error}`, 'error');
             }
         }

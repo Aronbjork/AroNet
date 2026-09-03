@@ -93,6 +93,20 @@ def init_db():
     if 'elapsed_seconds' not in job_columns:
         c.execute("ALTER TABLE job_queue ADD COLUMN elapsed_seconds INTEGER NOT NULL DEFAULT 0")
     
+    # Job Workers - who is currently working a job. Lets more than one person
+    # (or a person and a display device) work the same job at once: the job
+    # itself keeps a single shared status/clock, but any number of workers can
+    # be joined to it. A row here means that worker is actively on the job;
+    # leaving (or everyone leaving) removes it.
+    c.execute('''CREATE TABLE IF NOT EXISTS job_workers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER NOT NULL,
+        worker_name TEXT NOT NULL,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (job_id) REFERENCES job_queue(id),
+        UNIQUE(job_id, worker_name)
+    )''')
+
     # Device Status
     c.execute('''CREATE TABLE IF NOT EXISTS device_status (
         device_id TEXT PRIMARY KEY,

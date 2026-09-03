@@ -363,23 +363,30 @@ def next_batch_number(cursor, now=None):
             highest = max(highest, int(suffix))
     return f'{prefix}-{highest + 1:02d}'
 
+def get_job_workers(cursor, job_id):
+    """Everyone currently marked as actively working a job, oldest join first."""
+    # "id" breaks ties for joins in the same second - joined_at only has
+    # second precision, so two quick joins can otherwise land in either order.
+    cursor.execute("SELECT worker_name FROM job_workers WHERE job_id = ? ORDER BY joined_at, id", (job_id,))
+    return [row['worker_name'] for row in cursor.fetchall()]
+
 @app.route('/api/jobs', methods=['GET'])
 def get_jobs():
     """Get job queue (with optional filtering by device or status)."""
     device_id = request.args.get('device_id')
     status = request.args.get('status')
     limit = request.args.get('limit', type=int)
-    
+
     conn = get_db()
     c = conn.cursor()
-    
-    query = """SELECT j.*, p.product_code, p.name as product_name, o.name as operation_name 
-               FROM job_queue j 
-               JOIN products p ON j.product_id = p.id 
-               JOIN operations o ON j.operation_id = o.id 
+
+    query = """SELECT j.*, p.product_code, p.name as product_name, o.name as operation_name
+               FROM job_queue j
+               JOIN products p ON j.product_id = p.id
+               JOIN operations o ON j.operation_id = o.id
                WHERE 1=1"""
     params = []
-    
+
     if device_id:
         query += " AND j.assigned_device_id = ?"
         params.append(device_id)
@@ -388,14 +395,16 @@ def get_jobs():
     elif status:
         query += " AND j.status = ?"
         params.append(status)
-    
+
     query += " ORDER BY j.created_at"
     if limit is not None:
         query += " LIMIT ?"
         params.append(max(1, min(limit, 50)))
-    
+
     c.execute(query, params)
     jobs = [dict(row) for row in c.fetchall()]
+    for job in jobs:
+        job['workers'] = get_job_workers(c, job['id'])
     conn.close()
     return jsonify(jobs)
 
@@ -444,6 +453,7 @@ def delete_job(job_id):
     """Delete a queued job."""
     conn = get_db()
     c = conn.cursor()
+    c.execute("DELETE FROM job_workers WHERE job_id = ?", (job_id,))
     c.execute("DELETE FROM job_queue WHERE id = ?", (job_id,))
     if not c.rowcount:
         conn.close()
@@ -471,9 +481,81 @@ def pause_job(job_id):
     if not c.rowcount:
         conn.close()
         return jsonify({'error': 'Only an in-progress job can be paused'}), 409
+    # Pausing stops the shared clock, so nobody is "actively on it" any more -
+    # whoever had joined (via /join) can rejoin once it's picked up again.
+    c.execute("DELETE FROM job_workers WHERE job_id = ?", (job_id,))
     conn.commit()
     conn.close()
     return jsonify({'status': 'paused'})
+
+@app.route('/api/jobs/<int:job_id>/join', methods=['PUT'])
+def join_job(job_id):
+    """Join a job so more than one person can work it at once.
+
+    Starts the job (same as assign+start) if nobody's on it yet; if it's
+    already in progress, this just adds the caller alongside whoever else
+    has joined - Aron can join a job Linda already started, for example.
+    """
+    data = request.json or {}
+    worker_name = (data.get('worker_name') or '').strip()
+    if not worker_name:
+        return jsonify({'error': 'worker_name is required'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT status FROM job_queue WHERE id = ?", (job_id,))
+    job = c.fetchone()
+    if not job:
+        conn.close()
+        return jsonify({'error': 'Job not found'}), 404
+    if job['status'] == 'completed':
+        conn.close()
+        return jsonify({'error': 'This job is already completed'}), 409
+
+    if job['status'] in ('pending', 'paused', 'assigned'):
+        c.execute("""UPDATE job_queue SET status = 'in_progress', started_at = CURRENT_TIMESTAMP,
+                     assigned_device_id = COALESCE(assigned_device_id, ?) WHERE id = ?""",
+                  (worker_name, job_id))
+
+    c.execute("INSERT OR IGNORE INTO job_workers (job_id, worker_name) VALUES (?, ?)",
+              (job_id, worker_name))
+    conn.commit()
+    workers = get_job_workers(c, job_id)
+    conn.close()
+    return jsonify({'status': 'joined', 'workers': workers})
+
+@app.route('/api/jobs/<int:job_id>/leave', methods=['PUT'])
+def leave_job(job_id):
+    """Leave a job. If other workers are still joined, the job keeps running
+    for them; if the caller was the last one on it, it pauses (same as an
+    explicit pause) so its work time isn't left running against nobody."""
+    data = request.json or {}
+    worker_name = (data.get('worker_name') or '').strip()
+    if not worker_name:
+        return jsonify({'error': 'worker_name is required'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM job_workers WHERE job_id = ? AND worker_name = ?", (job_id, worker_name))
+    if not c.rowcount:
+        conn.close()
+        return jsonify({'error': 'You are not marked as working on this job'}), 409
+
+    remaining = get_job_workers(c, job_id)
+    paused = False
+    if not remaining:
+        c.execute("""UPDATE job_queue
+                     SET status = 'paused', assigned_device_id = NULL,
+                         elapsed_seconds = elapsed_seconds + CASE
+                             WHEN started_at IS NULL THEN 0
+                             ELSE CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER)
+                         END,
+                         started_at = NULL
+                     WHERE id = ? AND status = 'in_progress'""", (job_id,))
+        paused = c.rowcount > 0
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'left', 'workers': remaining, 'paused': paused})
 
 @app.route('/api/jobs/<int:job_id>/assign', methods=['PUT'])
 def assign_job(job_id):
@@ -908,7 +990,7 @@ def import_products_csv():
 # replaces it with the snapshot's contents, including primary keys, so relationships
 # between tables (e.g. which parts a product needs) come back intact.
 BACKUP_TABLES = ['parts', 'operations', 'products', 'product_operations', 'product_parts',
-                  'job_queue', 'device_status', 'audit_log']
+                  'job_queue', 'job_workers', 'device_status', 'audit_log']
 
 @app.route('/api/backup/export.zip', methods=['GET'])
 def export_backup_zip():
@@ -956,8 +1038,10 @@ def import_backup_zip():
     for table in BACKUP_TABLES:
         entry_name = f'{table}.csv'
         if entry_name not in zf.namelist():
-            conn.close()
-            return jsonify({'error': f'Backup is missing {entry_name}'}), 400
+            # Tables added after this backup was taken (e.g. job_workers) simply
+            # restore empty, rather than the whole backup being rejected.
+            table_rows[table] = ([], [])
+            continue
         try:
             content = zf.read(entry_name).decode('utf-8-sig')
         except UnicodeDecodeError:
