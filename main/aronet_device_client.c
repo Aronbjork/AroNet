@@ -136,7 +136,7 @@ static aronet_error_t parse_part(cJSON *json, aronet_part_t *part)
     }
     memset(part, 0, sizeof(*part));
     part->id = id->valueint;
-    part->quantity = cJSON_IsNumber(quantity) ? quantity->valueint : 0;
+    part->quantity = cJSON_IsNumber(quantity) ? (float)quantity->valuedouble : 0.0f;
     copy_json_string(json, "part_number", part->part_number, sizeof(part->part_number));
     copy_json_string(json, "name", part->name, sizeof(part->name));
     copy_json_string(json, "description", part->description, sizeof(part->description));
@@ -318,13 +318,13 @@ aronet_error_t aronet_get_parts(aronet_part_t *parts, uint32_t max_parts, uint32
     return part_count ? ARONET_OK : ARONET_ERR_NOT_FOUND;
 }
 
-aronet_error_t aronet_adjust_part(uint32_t part_id, int32_t quantity_change, const char *reason)
+aronet_error_t aronet_adjust_part(uint32_t part_id, float quantity_change, const char *reason)
 {
     char path[64];
     char body[192];
     snprintf(path, sizeof(path), "/parts/%lu/adjust", (unsigned long)part_id);
-    snprintf(body, sizeof(body), "{\"quantity_change\":%ld,\"reason\":\"%.120s\"}",
-             (long)quantity_change, reason ? reason : "Display adjustment");
+    snprintf(body, sizeof(body), "{\"quantity_change\":%.1f,\"reason\":\"%.120s\"}",
+             (double)quantity_change, reason ? reason : "Display adjustment");
     return request(path, HTTP_METHOD_POST, body, &s_response);
 }
 

@@ -22,8 +22,8 @@ def init_db():
         part_number TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
         description TEXT,
-        quantity INTEGER DEFAULT 0,
-        reorder_level INTEGER DEFAULT 10,
+        quantity REAL DEFAULT 0,
+        reorder_level REAL DEFAULT 10,
         unit TEXT DEFAULT 'pcs',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
@@ -63,7 +63,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         product_id INTEGER NOT NULL,
         part_id INTEGER NOT NULL,
-        quantity_per_unit INTEGER DEFAULT 1,
+        quantity_per_unit REAL DEFAULT 1,
         FOREIGN KEY (product_id) REFERENCES products(id),
         FOREIGN KEY (part_id) REFERENCES parts(id),
         UNIQUE(product_id, part_id)

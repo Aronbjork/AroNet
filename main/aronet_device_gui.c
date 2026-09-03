@@ -180,8 +180,9 @@ static void back_to_queue_event(lv_event_t *event)
 
 static void adjust_part_event(lv_event_t *event)
 {
-    int32_t amount = lv_spinbox_get_value(adjust_spinbox);
-    int32_t change = (int32_t)(intptr_t)lv_event_get_user_data(event) * amount;
+    /* The spinbox shows 1 decimal place, so its raw integer value is tenths (e.g. 15 = "1.5"). */
+    float amount = lv_spinbox_get_value(adjust_spinbox) / 10.0f;
+    float change = (float)(int32_t)(intptr_t)lv_event_get_user_data(event) * amount;
     aronet_error_t result = aronet_adjust_part(current_part.id, change, "Display stock adjustment");
     if (result == ARONET_OK) {
         current_part.quantity += change;
@@ -215,15 +216,17 @@ static void inventory_part_event(lv_event_t *event)
     current_part = *(aronet_part_t *)lv_event_get_user_data(event);
     ui_state = UI_INVENTORY_DETAILS;
     char detail[512];
-    snprintf(detail, sizeof(detail), "Part number: %.31s\nName: %.63s\nDescription: %.255s\nIn stock: %lu %.15s",
+    snprintf(detail, sizeof(detail), "Part number: %.31s\nName: %.63s\nDescription: %.255s\nIn stock: %.1f %.15s",
              current_part.part_number, current_part.name, current_part.description,
-             (unsigned long)current_part.quantity, current_part.unit);
+             (double)current_part.quantity, current_part.unit);
     show_screen("Adjust inventory", detail, 0x5AA9E6);
 
     adjust_spinbox = lv_spinbox_create(lv_screen_active());
+    /* 5 digits, decimal point after the 4th -> "0.1" .. "9999.9". Raw value is tenths:
+     * short +/- taps step by 1 raw (0.1 real), long-press repeat by 10 raw (1.0 real). */
     lv_spinbox_set_range(adjust_spinbox, 1, 99999);
-    lv_spinbox_set_digit_format(adjust_spinbox, 5, 0);
-    lv_spinbox_set_value(adjust_spinbox, 1);
+    lv_spinbox_set_digit_format(adjust_spinbox, 5, 4);
+    lv_spinbox_set_value(adjust_spinbox, 10);
     lv_obj_set_size(adjust_spinbox, 180, 56);
     lv_obj_set_pos(adjust_spinbox, 36, 330);
     lv_obj_set_style_text_font(adjust_spinbox, &swedish_font_20, LV_PART_MAIN);
@@ -374,9 +377,9 @@ static void show_queue(uint32_t tab_index)
     style_list(inventory_list);
     for (uint32_t index = 0; index < inventory_part_count; index++) {
         char text[128];
-        snprintf(text, sizeof(text), "%.31s | %.63s\nIn stock: %lu %s",
+        snprintf(text, sizeof(text), "%.31s | %.63s\nIn stock: %.1f %s",
                  inventory_parts[index].part_number, inventory_parts[index].name,
-                 (unsigned long)inventory_parts[index].quantity, inventory_parts[index].unit);
+                 (double)inventory_parts[index].quantity, inventory_parts[index].unit);
         lv_obj_t *button = lv_list_add_button(inventory_list, NULL, text);
         style_list_row(button);
         lv_obj_add_event_cb(button, inventory_part_event, LV_EVENT_CLICKED, &inventory_parts[index]);

@@ -5,10 +5,33 @@ from datetime import datetime
 import csv
 import io
 import json
+import math
 import zipfile
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
+
+def parse_quantity(value, allow_zero=True, allow_negative=True):
+    """Validate a stock/BOM quantity and round it to 1 decimal place.
+
+    Parts measured in meters (or other fractional units) need fractional
+    quantities - e.g. 0.5m - so quantities are floats rounded to 1 decimal
+    rather than whole numbers, everywhere a quantity is read from a request.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None, 'must be a number'
+    if not math.isfinite(value):
+        return None, 'must be a finite number'
+    rounded = round(float(value), 1)
+    if not allow_zero and rounded == 0:
+        return None, 'must be non-zero'
+    if not allow_negative and rounded < 0:
+        return None, 'must not be negative'
+    return rounded, None
+
+def parse_decimal_cell(text):
+    """Parse a CSV quantity cell, accepting Swedish-style "0,5" as well as "0.5"."""
+    return float((text or '').strip().replace(',', '.'))
 
 # Initialize database schema on startup. Demo data is never auto-seeded here -
 # it previously reappeared after every restart even when deleted through the UI,
@@ -38,13 +61,17 @@ def get_parts():
 def create_part():
     """Create new part."""
     data = request.json
+    quantity, error = parse_quantity(data.get('quantity', 0), allow_negative=False)
+    if error:
+        return jsonify({'error': f'Quantity {error}'}), 400
+
     conn = get_db()
     c = conn.cursor()
     try:
         c.execute("""INSERT INTO parts (part_number, name, description, quantity, unit)
                  VALUES (?, ?, ?, ?, ?)""",
               (data.get('part_number'), data.get('name'), data.get('description', ''),
-               data.get('quantity', 0), data.get('unit', 'pcs')))
+               quantity, data.get('unit', 'pcs')))
         conn.commit()
         part_id = c.lastrowid
         conn.close()
@@ -57,12 +84,16 @@ def create_part():
 def update_part(part_id):
     """Update part details."""
     data = request.json
+    reorder_level, error = parse_quantity(data.get('reorder_level', 10), allow_negative=False)
+    if error:
+        return jsonify({'error': f'Reorder level {error}'}), 400
+
     conn = get_db()
     c = conn.cursor()
-    c.execute("""UPDATE parts SET name=?, description=?, reorder_level=?, unit=? 
+    c.execute("""UPDATE parts SET name=?, description=?, reorder_level=?, unit=?
                  WHERE id=?""",
-              (data.get('name'), data.get('description', ''), 
-               data.get('reorder_level', 10), data.get('unit', 'pcs'), part_id))
+              (data.get('name'), data.get('description', ''),
+               reorder_level, data.get('unit', 'pcs'), part_id))
     conn.commit()
     conn.close()
     return jsonify({'status': 'updated'})
@@ -71,15 +102,19 @@ def update_part(part_id):
 def adjust_part_quantity(part_id):
     """Add or trim stock while preserving an audit record."""
     data = request.json or {}
-    quantity_change = data.get('quantity_change')
     reason = data.get('reason', 'Manual adjustment')
-    if not isinstance(quantity_change, int) or quantity_change == 0:
-        return jsonify({'error': 'Quantity change must be a non-zero whole number'}), 400
+    quantity_change, error = parse_quantity(data.get('quantity_change'), allow_zero=False)
+    if error:
+        return jsonify({'error': f'Quantity change {error}'}), 400
 
     conn = get_db()
     c = conn.cursor()
-    c.execute("""UPDATE parts SET quantity = quantity + ?
-                 WHERE id = ? AND quantity + ? >= 0""",
+    # ROUND on write keeps stock at 1 decimal even after many adjustments -
+    # otherwise repeated float arithmetic (e.g. many 0.1m trims) can drift
+    # by a tiny fractional amount and make a truly-zero balance read as
+    # slightly negative.
+    c.execute("""UPDATE parts SET quantity = ROUND(quantity + ?, 1)
+                 WHERE id = ? AND ROUND(quantity + ?, 1) >= 0""",
               (quantity_change, part_id, quantity_change))
     if not c.rowcount:
         conn.close()
@@ -181,11 +216,12 @@ def parse_product_payload(data, require_all=True):
         seen_part_ids = set()
         for part_spec in parts:
             part_id = part_spec.get('part_id')
-            quantity_per_unit = part_spec.get('quantity_per_unit', 1)
             if not isinstance(part_id, int):
                 return None, 'Every required part needs a part id'
-            if not isinstance(quantity_per_unit, int) or quantity_per_unit < 1:
-                return None, 'Quantity per unit must be a positive whole number'
+            quantity_per_unit, error = parse_quantity(part_spec.get('quantity_per_unit', 1), allow_zero=False, allow_negative=False)
+            if error:
+                return None, f'Quantity per unit {error}'
+            part_spec['quantity_per_unit'] = quantity_per_unit
             if part_id in seen_part_ids:
                 return None, 'A part can only be listed once per product'
             seen_part_ids.add(part_id)
@@ -503,15 +539,17 @@ def complete_job(job_id):
                          FROM parts p JOIN product_parts pp ON pp.part_id = p.id
                          WHERE pp.product_id = ?""", (product_id,))
             required_parts = c.fetchall()
+            # round() avoids float artifacts like 0.1 * 3 = 0.30000000000000004
+            # causing a shortage check to misfire by a hair.
             shortages = [row['name'] for row in required_parts
-                         if row['quantity'] < row['quantity_per_unit'] * job_quantity]
+                         if row['quantity'] < round(row['quantity_per_unit'] * job_quantity, 1)]
             if shortages:
                 conn.close()
                 return jsonify({'error': 'Insufficient stock: ' + ', '.join(shortages)}), 409
 
             for part in required_parts:
-                used_quantity = part['quantity_per_unit'] * job_quantity
-                c.execute("UPDATE parts SET quantity = quantity - ? WHERE id = ?",
+                used_quantity = round(part['quantity_per_unit'] * job_quantity, 1)
+                c.execute("UPDATE parts SET quantity = ROUND(quantity - ?, 1) WHERE id = ?",
                           (used_quantity, part['id']))
                 c.execute("""INSERT INTO audit_log (part_id, operation, quantity_change, reason, device_id)
                              VALUES (?, 'production_consumption', ?, ?, ?)""",
@@ -614,9 +652,9 @@ def import_inventory_csv():
         description = (row.get('Beskrivning') or '').strip()
         unit = (row.get('Enhet') or '').strip() or 'pcs'
         try:
-            quantity = int((row.get('Inventerat antal') or '').strip())
+            quantity = round(parse_decimal_cell(row.get('Inventerat antal')), 1)
         except ValueError:
-            return jsonify({'error': f'Row {row_number}: Inventerat antal must be a whole number'}), 400
+            return jsonify({'error': f'Row {row_number}: Inventerat antal must be a number (e.g. 12 or 0.5)'}), 400
         if not part_number or not name or quantity < 0:
             return jsonify({'error': f'Row {row_number}: article number, name, and a non-negative quantity are required'}), 400
         parsed_rows.append((part_number, name, description, quantity, unit))
@@ -793,11 +831,11 @@ def import_products_csv():
         if not part_number:
             continue
         try:
-            quantity_per_unit = int((row.get('quantity_per_unit') or '').strip() or '1')
+            quantity_per_unit = round(parse_decimal_cell(row.get('quantity_per_unit') or '1'), 1)
         except ValueError:
-            return jsonify({'error': f'Row {row_number}: quantity_per_unit must be a whole number'}), 400
-        if quantity_per_unit < 1:
-            return jsonify({'error': f'Row {row_number}: quantity_per_unit must be at least 1'}), 400
+            return jsonify({'error': f'Row {row_number}: quantity_per_unit must be a number (e.g. 1 or 0.5)'}), 400
+        if quantity_per_unit <= 0:
+            return jsonify({'error': f'Row {row_number}: quantity_per_unit must be greater than 0'}), 400
         if any(existing['part_number'] == part_number for existing in product['parts']):
             return jsonify({'error': f'Row {row_number}: {part_number} is listed twice for {product_code}'}), 400
         product['parts'].append({'part_number': part_number, 'quantity_per_unit': quantity_per_unit,

@@ -419,7 +419,7 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label>Initial Quantity</label>
-                            <input type="number" name="quantity" value="0" min="0">
+                            <input type="number" name="quantity" value="0" min="0" step="0.1">
                         </div>
                         <div class="form-group">
                             <label>Unit</label>
@@ -528,7 +528,7 @@
                         <label>Parts Required Per Product</label>
                         <div class="bom-row">
                             <select id="bom-part-select"></select>
-                            <input id="bom-part-quantity" type="number" min="1" value="1" aria-label="Quantity per product">
+                            <input id="bom-part-quantity" type="number" min="0.1" step="0.1" value="1" aria-label="Quantity per product">
                             <button id="add-bom-part" type="button">Add Part</button>
                         </div>
                         <div id="bom-parts-list"></div>
@@ -742,8 +742,9 @@
         }
 
         async function adjustPart(partId, partNumber) {
-            const change = Number.parseInt(prompt(`Stock change for ${partNumber}. Use a positive value to add stock or negative to trim it.`, '0'), 10);
-            if (!Number.isInteger(change) || change === 0) return;
+            const raw = prompt(`Stock change for ${partNumber}. Use a positive value to add stock or negative to trim it (decimals like 0.5 are fine).`, '0');
+            const change = raw === null ? NaN : Number.parseFloat(raw.replace(',', '.'));
+            if (!Number.isFinite(change) || change === 0) return;
             const reason = prompt('Reason for this adjustment:', 'Manual adjustment');
             if (reason === null) return;
 
@@ -860,8 +861,8 @@
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData);
-            data.quantity = parseInt(data.quantity);
-            
+            data.quantity = parseFloat(data.quantity);
+
             const response = await fetch(`${API_BASE}/parts`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1027,9 +1028,9 @@
 
         document.getElementById('add-bom-part').addEventListener('click', () => {
             const partId = Number.parseInt(document.getElementById('bom-part-select').value, 10);
-            const quantity = Number.parseInt(document.getElementById('bom-part-quantity').value, 10);
+            const quantity = Number.parseFloat(document.getElementById('bom-part-quantity').value);
             const part = availableParts.find(item => item.id === partId);
-            if (!part || !Number.isInteger(quantity) || quantity < 1) return;
+            if (!part || !Number.isFinite(quantity) || quantity <= 0) return;
             bomParts.push({ part_id: part.id, part_number: part.part_number, name: part.name, quantity_per_unit: quantity });
             renderBomParts();
         });
@@ -1136,6 +1137,23 @@
             }[ch]));
         }
 
+        // Gives every batch a color so jobs from the same batch are easy to spot
+        // at a glance in "Jobs Waiting to Be Started". A batch keeps its color for
+        // as long as the page stays open, even after some of its jobs get started.
+        const BATCH_COLORS = ['#e3f2fd', '#fce4ec', '#e8f5e9', '#fff3e0', '#f3e5f5',
+                               '#e0f7fa', '#fff9c4', '#efebe9', '#ede7f6', '#e1f5fe'];
+        const batchColorMap = {};
+        let nextBatchColorIndex = 0;
+
+        function colorForBatch(batchNumber) {
+            const key = batchNumber || '';
+            if (!batchColorMap[key]) {
+                batchColorMap[key] = BATCH_COLORS[nextBatchColorIndex % BATCH_COLORS.length];
+                nextBatchColorIndex++;
+            }
+            return batchColorMap[key];
+        }
+
         function getOperatorName() {
             return document.getElementById('operator-name').value.trim();
         }
@@ -1184,9 +1202,12 @@
             `).join('') || '<tr><td colspan="7">No active jobs. Sign in above and start one below.</td></tr>';
 
             const availableTbody = document.getElementById('work-available-table');
-            const availableJobs = jobs.filter(j => j.status === 'pending' || j.status === 'paused');
+            const availableJobs = jobs.filter(j => j.status === 'pending' || j.status === 'paused')
+                // Stable sort: groups same-batch jobs together while keeping each
+                // batch's own jobs in their original (operation sequence) order.
+                .sort((a, b) => (a.batch_number || '').localeCompare(b.batch_number || ''));
             availableTbody.innerHTML = availableJobs.map(j => `
-                <tr>
+                <tr style="background: ${colorForBatch(j.batch_number)}">
                     <td>${j.id}</td>
                     <td>${escapeHtml(j.product_code)} - ${escapeHtml(j.product_name)}</td>
                     <td>${escapeHtml(j.operation_name)}</td>

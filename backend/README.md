@@ -89,6 +89,9 @@ product's existing workflow.
 ```
 id, part_number (unique), name, description, quantity, reorder_level, unit, created_at
 ```
+`quantity` and `reorder_level` (and a product's `quantity_per_unit`, in the
+Product-Part table below) accept decimals, rounded to 1 decimal place - for
+parts measured in meters, kg, etc. rather than whole pieces.
 
 ### Operations Table
 ```
