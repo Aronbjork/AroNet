@@ -112,9 +112,58 @@
         .content {
             display: none;
         }
-        
+
         .content.active {
             display: block;
+        }
+
+        .settings-content {
+            display: none;
+        }
+
+        .settings-content.active {
+            display: block;
+        }
+
+        .settings-tabs {
+            display: flex;
+            gap: 10px;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 20px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .settings-tab-btn {
+            padding: 8px 16px;
+            border: none;
+            background: var(--light-gray);
+            color: var(--graphite);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 4px 4px 0 0;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .settings-tab-btn.active {
+            color: var(--petrol-teal);
+            border-bottom-color: var(--petrol-teal);
+        }
+
+        .settings-unlock-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .settings-unlock-bar p {
+            color: #666;
         }
         
         .stats-grid {
@@ -393,10 +442,7 @@
             <div class="nav-tabs">
                 <button class="tab-btn active" data-tab="work">Work</button>
                 <button class="tab-btn" data-tab="dashboard">Dashboard</button>
-                <button class="tab-btn" data-tab="parts">Parts</button>
-                <button class="tab-btn" data-tab="operations">Operations</button>
-                <button class="tab-btn" data-tab="products">Products</button>
-                <button class="tab-btn" data-tab="jobs">Jobs</button>
+                <button class="tab-btn" data-tab="settings">Settings</button>
             </div>
         </header>
         
@@ -449,8 +495,37 @@
 
         </div>
 
-        <!-- PARTS TAB -->
-        <div id="parts" class="content">
+        <!-- SETTINGS TAB -->
+        <div id="settings" class="content">
+            <div id="settings-gate">
+                <div class="form-section">
+                    <h2>Settings are password protected</h2>
+                    <div id="message-settings-gate" class="message"></div>
+                    <form id="settings-unlock-form">
+                        <div class="form-group">
+                            <label>Password *</label>
+                            <input type="password" id="settings-password" required autocomplete="off">
+                        </div>
+                        <button type="submit">Unlock</button>
+                    </form>
+                </div>
+            </div>
+
+            <div id="settings-panel" hidden>
+                <div class="form-section settings-unlock-bar">
+                    <p id="settings-unlock-status"></p>
+                    <button type="button" class="secondary" id="settings-lock-now">Lock Now</button>
+                </div>
+
+                <div class="settings-tabs">
+                    <button class="settings-tab-btn active" data-subtab="parts">Parts</button>
+                    <button class="settings-tab-btn" data-subtab="operations">Operations</button>
+                    <button class="settings-tab-btn" data-subtab="products">Products</button>
+                    <button class="settings-tab-btn" data-subtab="jobs">Jobs</button>
+                </div>
+
+        <!-- PARTS SUBTAB -->
+            <div id="parts" class="settings-content active">
             <div id="message-parts" class="message"></div>
             
             <div class="form-section">
@@ -518,8 +593,8 @@
             </div>
         </div>
 
-        <!-- OPERATIONS TAB -->
-        <div id="operations" class="content">
+        <!-- OPERATIONS SUBTAB -->
+            <div id="operations" class="settings-content">
             <div id="message-operations" class="message"></div>
             
             <div class="form-section">
@@ -552,8 +627,8 @@
             </div>
         </div>
         
-        <!-- PRODUCTS TAB -->
-        <div id="products" class="content">
+        <!-- PRODUCTS SUBTAB -->
+            <div id="products" class="settings-content">
             <div id="message-products" class="message"></div>
             
             <div class="form-section">
@@ -624,8 +699,8 @@
             </div>
         </div>
         
-        <!-- JOBS TAB -->
-        <div id="jobs" class="content">
+        <!-- JOBS SUBTAB -->
+            <div id="jobs" class="settings-content">
             <div id="message-jobs" class="message"></div>
             
             <div class="form-section">
@@ -674,6 +749,9 @@
                     <tbody id="jobs-table">
                     </tbody>
                 </table>
+            </div>
+            </div>
+                <!-- /settings-panel -->
             </div>
         </div>
 
@@ -753,11 +831,8 @@
                 
                 // Load data for active tab
                 if (e.target.dataset.tab === 'dashboard') loadDashboard();
-                else if (e.target.dataset.tab === 'parts') loadParts();
-                else if (e.target.dataset.tab === 'operations') loadOperations();
-                else if (e.target.dataset.tab === 'products') loadProducts();
-                else if (e.target.dataset.tab === 'jobs') loadJobs();
                 else if (e.target.dataset.tab === 'work') loadWork();
+                else if (e.target.dataset.tab === 'settings') enterSettings();
             });
         });
         
@@ -768,6 +843,90 @@
             el.className = `message ${type}`;
             setTimeout(() => el.className = 'message', 4000);
         }
+
+        // SETTINGS (password gate)
+        // This is a soft, client-side lock so a casual visitor doesn't poke around
+        // in Parts/Operations/Products/Jobs without the shared password - it is
+        // NOT real security. The password lives in this page's own source, and
+        // the underlying /api endpoints have no authentication of their own, so
+        // anyone who calls the API directly bypasses this entirely.
+        const SETTINGS_PASSWORD = 'Aronet';
+        const SETTINGS_UNLOCK_KEY = 'aronet_settings_unlock_until';
+        const SETTINGS_UNLOCK_MS = 15 * 60 * 1000;
+        const SETTINGS_SUBTAB_LOADERS = { parts: loadParts, operations: loadOperations, products: loadProducts, jobs: loadJobs };
+        let settingsCountdownTimer = null;
+
+        function settingsUnlockedUntil() {
+            return Number(sessionStorage.getItem(SETTINGS_UNLOCK_KEY) || 0);
+        }
+
+        function isSettingsUnlocked() {
+            return Date.now() < settingsUnlockedUntil();
+        }
+
+        function updateSettingsUnlockStatus() {
+            const remainingMs = settingsUnlockedUntil() - Date.now();
+            if (remainingMs <= 0) {
+                enterSettings(); // time's up - fall back to the password gate
+                return;
+            }
+            const minutes = Math.floor(remainingMs / 60000);
+            const seconds = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
+            document.getElementById('settings-unlock-status').textContent =
+                `Unlocked - locks again in ${minutes}:${seconds}`;
+        }
+
+        function unlockSettings() {
+            sessionStorage.setItem(SETTINGS_UNLOCK_KEY, String(Date.now() + SETTINGS_UNLOCK_MS));
+            document.getElementById('settings-gate').hidden = true;
+            document.getElementById('settings-panel').hidden = false;
+            document.getElementById('settings-password').value = '';
+            // Load all four - not just the visible one - since they depend on each
+            // other (the Products form's operation checklist and part picker come
+            // from loadOperations()/loadParts(), the Jobs form's product list from
+            // loadProducts()), and none of this should be fetched before unlocking.
+            Object.values(SETTINGS_SUBTAB_LOADERS).forEach(loader => loader());
+            clearInterval(settingsCountdownTimer);
+            updateSettingsUnlockStatus();
+            settingsCountdownTimer = setInterval(updateSettingsUnlockStatus, 1000);
+        }
+
+        function lockSettings() {
+            sessionStorage.removeItem(SETTINGS_UNLOCK_KEY);
+            clearInterval(settingsCountdownTimer);
+            document.getElementById('settings-gate').hidden = false;
+            document.getElementById('settings-panel').hidden = true;
+        }
+
+        function enterSettings() {
+            if (isSettingsUnlocked()) {
+                unlockSettings(); // re-show the panel and restart the on-screen countdown
+            } else {
+                lockSettings();
+            }
+        }
+
+        document.getElementById('settings-unlock-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const entered = document.getElementById('settings-password').value;
+            if (entered === SETTINGS_PASSWORD) {
+                unlockSettings();
+            } else {
+                showMessage('settings-gate', 'Incorrect password', 'error');
+            }
+        });
+
+        document.getElementById('settings-lock-now').addEventListener('click', lockSettings);
+
+        document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.settings-content').forEach(c => c.classList.remove('active'));
+                e.target.classList.add('active');
+                document.getElementById(e.target.dataset.subtab).classList.add('active');
+                SETTINGS_SUBTAB_LOADERS[e.target.dataset.subtab]();
+            });
+        });
 
         async function deleteResource(path, tab, label, reload) {
             if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
@@ -1356,21 +1515,19 @@
         }
 
         // Auto-load on startup. Work is the default visible tab, so it loads eagerly
-        // too; the others stay lazy (loaded when their tab is first clicked) except
-        // these, which populate selects/lookups other tabs depend on.
+        // too. Parts/Operations/Products/Jobs are behind the Settings password gate
+        // and only load once that's unlocked (see unlockSettings()) - loading them
+        // here would fetch that data before the password is even checked.
         loadWork();
         loadDashboard();
-        loadParts();
-        loadOperations();
-        loadProducts();
 
         // AUTO-REFRESH
         // Only for the tabs that are pure read-and-act displays (job status,
-        // stats) - not Parts/Operations/Products, whose forms (the product
-        // form's operation checklist, the BOM builder) would lose whatever the
-        // user is mid-way through building if their dropdowns got rebuilt out
-        // from under them every few seconds.
-        const AUTO_REFRESH_LOADERS = { work: loadWork, jobs: loadJobs, dashboard: loadDashboard };
+        // stats) - not Settings, whose forms (the product form's operation
+        // checklist, the BOM builder) would lose whatever the user is mid-way
+        // through building if their dropdowns got rebuilt out from under them
+        // every few seconds.
+        const AUTO_REFRESH_LOADERS = { work: loadWork, dashboard: loadDashboard };
         const AUTO_REFRESH_MS = 5000;
 
         setInterval(() => {
