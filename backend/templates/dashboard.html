@@ -1068,6 +1068,20 @@
             deleteResource(`/jobs/${jobId}`, 'jobs', `job ${jobId}`, loadJobs);
         }
 
+        async function deleteJobBatch(batchNumber) {
+            if (!confirm(`Delete the entire batch "${batchNumber}"? This deletes every operation step in this batch - including any pending, in-progress, or paused ones - not just this row. This cannot be undone.`)) return;
+
+            const response = await fetch(`${API_BASE}/jobs/batch/${encodeURIComponent(batchNumber)}`, { method: 'DELETE' });
+            if (response.ok) {
+                const result = await response.json();
+                showMessage('jobs', `Batch ${batchNumber} deleted (${result.count} job${result.count === 1 ? '' : 's'})`, 'success');
+                loadJobs();
+            } else {
+                const error = await response.json();
+                showMessage('jobs', `Error: ${error.error}`, 'error');
+            }
+        }
+
         async function adjustPart(partId, partNumber) {
             const raw = prompt(`Stock change for ${partNumber}. Use a positive value to add stock or negative to trim it (decimals like 0.5 are fine).`, '0');
             const change = raw === null ? NaN : Number.parseFloat(raw.replace(',', '.'));
@@ -1611,7 +1625,10 @@
                     <td>${(j.workers || []).length ? j.workers.map(escapeHtml).join(', ') : (j.assigned_device_id ? escapeHtml(j.assigned_device_id) : '-')}</td>
                     <td>${j.started_at ? new Date(j.started_at).toLocaleString() : '-'}</td>
                     <td>${j.completed_at ? new Date(j.completed_at).toLocaleString() : '-'}</td>
-                    <td><button class="secondary" onclick="deleteJob(${j.id})">Delete</button></td>
+                    <td class="action-buttons">
+                        <button class="secondary" onclick="deleteJob(${j.id})">Delete</button>
+                        <button class="secondary" onclick="deleteJobBatch('${escapeHtml(j.batch_number)}')">Delete Batch</button>
+                    </td>
                 </tr>
             `).join('');
         }

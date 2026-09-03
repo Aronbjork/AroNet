@@ -462,6 +462,23 @@ def delete_job(job_id):
     conn.close()
     return jsonify({'status': 'deleted'})
 
+@app.route('/api/jobs/batch/<batch_number>', methods=['DELETE'])
+def delete_job_batch(batch_number):
+    """Delete every job in a batch (every operation step) in one call."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id FROM job_queue WHERE batch_number = ?", (batch_number,))
+    job_ids = [row['id'] for row in c.fetchall()]
+    if not job_ids:
+        conn.close()
+        return jsonify({'error': 'No jobs found for that batch'}), 404
+    placeholders = ', '.join('?' for _ in job_ids)
+    c.execute(f"DELETE FROM job_workers WHERE job_id IN ({placeholders})", job_ids)
+    c.execute("DELETE FROM job_queue WHERE batch_number = ?", (batch_number,))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'deleted', 'count': len(job_ids)})
+
 @app.route('/api/jobs/<int:job_id>/cancel', methods=['PUT'])
 def cancel_job(job_id):
     """Legacy alias for pausing a job without deleting it."""
