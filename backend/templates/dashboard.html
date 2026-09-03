@@ -437,7 +437,6 @@
                     <p>Industrial Inventory &amp; Production Management</p>
                 </div>
             </div>
-            <p><a href="/api/inventory/export.csv">Export inventory CSV</a></p>
 
             <div class="nav-tabs">
                 <button class="tab-btn active" data-tab="work">Work</button>
@@ -476,23 +475,6 @@
                     <div class="value" id="stat-devices">0</div>
                 </div>
             </div>
-
-            <div class="form-section">
-                <h2>Full Database Backup</h2>
-                <p>Downloads every table (parts, operations, products, jobs, and history) as one zip file. Keep these somewhere safe and grab a fresh one periodically.</p>
-                <p><a href="/api/backup/export.zip">Download full backup (.zip)</a></p>
-
-                <h3 style="margin-top: 20px;">Restore from Backup</h3>
-                <p><strong>Warning:</strong> restoring replaces every part, operation, product, and job currently in the system with the contents of the backup file. Anything added since that backup was taken is permanently lost. This cannot be undone.</p>
-                <form id="restore-backup-form">
-                    <div class="form-group">
-                        <label>Backup file (.zip)</label>
-                        <input type="file" name="file" accept=".zip" required>
-                    </div>
-                    <button type="submit" class="secondary">Restore (Replace All Data)</button>
-                </form>
-            </div>
-
         </div>
 
         <!-- SETTINGS TAB -->
@@ -522,6 +504,7 @@
                     <button class="settings-tab-btn" data-subtab="operations">Operations</button>
                     <button class="settings-tab-btn" data-subtab="products">Products</button>
                     <button class="settings-tab-btn" data-subtab="jobs">Jobs</button>
+                    <button class="settings-tab-btn" data-subtab="backup">Backup</button>
                 </div>
 
         <!-- PARTS SUBTAB -->
@@ -560,7 +543,8 @@
             </div>
 
             <div class="form-section">
-                <h2>Import Inventory CSV</h2>
+                <h2>Inventory CSV</h2>
+                <p><a href="/api/inventory/export.csv">Export inventory CSV</a></p>
                 <form id="import-inventory-form">
                     <div class="form-group">
                         <label>AroNet inventory CSV</label>
@@ -751,6 +735,27 @@
                 </table>
             </div>
             </div>
+
+        <!-- BACKUP SUBTAB -->
+            <div id="backup" class="settings-content">
+            <div id="message-backup" class="message"></div>
+
+            <div class="form-section">
+                <h2>Full Database Backup</h2>
+                <p>Downloads every table (parts, operations, products, jobs, and history) as one zip file. Keep these somewhere safe and grab a fresh one periodically.</p>
+                <p><a href="/api/backup/export.zip">Download full backup (.zip)</a></p>
+
+                <h3 style="margin-top: 20px;">Restore from Backup</h3>
+                <p><strong>Warning:</strong> restoring replaces every part, operation, product, and job currently in the system with the contents of the backup file. Anything added since that backup was taken is permanently lost. This cannot be undone.</p>
+                <form id="restore-backup-form">
+                    <div class="form-group">
+                        <label>Backup file (.zip)</label>
+                        <input type="file" name="file" accept=".zip" required>
+                    </div>
+                    <button type="submit" class="secondary">Restore (Replace All Data)</button>
+                </form>
+            </div>
+            </div>
                 <!-- /settings-panel -->
             </div>
         </div>
@@ -924,7 +929,8 @@
                 document.querySelectorAll('.settings-content').forEach(c => c.classList.remove('active'));
                 e.target.classList.add('active');
                 document.getElementById(e.target.dataset.subtab).classList.add('active');
-                SETTINGS_SUBTAB_LOADERS[e.target.dataset.subtab]();
+                const loader = SETTINGS_SUBTAB_LOADERS[e.target.dataset.subtab];
+                if (loader) loader();
             });
         });
 
@@ -1011,15 +1017,16 @@
 
             if (response.ok) {
                 const result = await response.json();
-                showMessage('dashboard', `✓ Database restored: ${JSON.stringify(result.rows)}`, 'success');
+                showMessage('backup', `✓ Database restored: ${JSON.stringify(result.rows)}`, 'success');
                 e.target.reset();
                 loadDashboard();
                 loadParts();
                 loadOperations();
                 loadProducts();
+                loadJobs();
             } else {
                 const error = await response.json();
-                showMessage('dashboard', `✗ Restore failed: ${error.error}`, 'error');
+                showMessage('backup', `✗ Restore failed: ${error.error}`, 'error');
             }
         });
 
