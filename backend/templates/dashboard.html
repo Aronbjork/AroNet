@@ -193,7 +193,97 @@
             font-weight: bold;
             color: var(--petrol-teal);
         }
-        
+
+        .chart-subtitle {
+            color: #666;
+            font-size: 13px;
+            margin-top: -14px;
+            margin-bottom: 16px;
+        }
+
+        .chart-svg {
+            width: 100%;
+            height: auto;
+            display: block;
+            overflow: visible;
+        }
+
+        .chart-bar-fill {
+            fill: var(--petrol-teal);
+        }
+
+        .chart-bar-group:hover .chart-bar-fill,
+        .chart-bar-group:focus .chart-bar-fill {
+            fill: var(--petrol-teal-dark);
+        }
+
+        .chart-bar-group {
+            outline: none;
+        }
+
+        .chart-cat-label {
+            fill: var(--graphite);
+            font-size: 12px;
+            font-family: inherit;
+        }
+
+        .chart-value-label {
+            fill: var(--graphite);
+            font-size: 12px;
+            font-weight: 600;
+            font-family: inherit;
+        }
+
+        .chart-axis-label {
+            fill: #888;
+            font-size: 11px;
+            font-family: inherit;
+        }
+
+        .chart-grid-line {
+            stroke: #eee;
+            stroke-width: 1;
+        }
+
+        .chart-baseline {
+            stroke: #ddd;
+            stroke-width: 1;
+        }
+
+        .chart-hit-area {
+            cursor: pointer;
+        }
+
+        .chart-empty {
+            color: #888;
+            font-size: 14px;
+            padding: 30px 0;
+            text-align: center;
+        }
+
+        .chart-tooltip {
+            position: fixed;
+            pointer-events: none;
+            background: var(--graphite);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            line-height: 1.4;
+            z-index: 100;
+            display: none;
+            white-space: nowrap;
+        }
+
+        .chart-tooltip .chart-tooltip-value {
+            font-weight: 700;
+            font-size: 13px;
+        }
+
+        .chart-tooltip .chart-tooltip-label {
+            color: #ccc;
+        }
+
         .table-container {
             background: white;
             border-radius: 8px;
@@ -473,6 +563,19 @@
                 <div class="stat-card">
                     <h3>Devices Online</h3>
                     <div class="value" id="stat-devices">0</div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-section">
+                    <h2>Jobs In Progress</h2>
+                    <p class="chart-subtitle">By operation, right now</p>
+                    <div id="chart-in-progress"></div>
+                </div>
+                <div class="form-section">
+                    <h2>Completed Jobs</h2>
+                    <p class="chart-subtitle">Last 14 days</p>
+                    <div id="chart-completed-trend"></div>
                 </div>
             </div>
         </div>
@@ -822,6 +925,8 @@
         </div>
     </div>
 
+    <div id="chart-tooltip" class="chart-tooltip" role="status"></div>
+
     <script>
         const API_BASE = '/api';
         const OPERATOR_NAME_KEY = 'aronet_operator_name';
@@ -986,8 +1091,13 @@
         
         // DASHBOARD
         async function loadDashboard() {
-            const response = await fetch(`${API_BASE}/dashboard/stats`);
-            const stats = await response.json();
+            const [statsResponse, jobsResponse] = await Promise.all([
+                fetch(`${API_BASE}/dashboard/stats`),
+                fetch(`${API_BASE}/jobs`)
+            ]);
+            const stats = await statsResponse.json();
+            const jobs = await jobsResponse.json();
+
             document.getElementById('stat-parts').textContent = stats.parts_count;
             document.getElementById('stat-unique-parts').textContent = stats.parts_count;
             document.getElementById('stat-pending').textContent = stats.pending_jobs;
@@ -995,6 +1105,181 @@
             document.getElementById('stat-completed').textContent = stats.completed_jobs;
             document.getElementById('stat-devices').textContent = stats.devices_connected;
 
+            renderHorizontalBarChart('chart-in-progress', buildInProgressByOperation(jobs), {
+                emptyText: 'No jobs in progress right now.',
+                unitLabel: 'in progress',
+            });
+            renderColumnChart('chart-completed-trend', buildCompletedTrend(jobs, 14), {
+                unitLabel: 'completed',
+            });
+        }
+
+        // --- Dashboard chart data prep ---
+        function buildInProgressByOperation(jobs) {
+            const counts = {};
+            jobs.filter(j => j.status === 'in_progress').forEach(j => {
+                const key = j.operation_name || 'Unknown';
+                counts[key] = (counts[key] || 0) + 1;
+            });
+            return Object.entries(counts)
+                .map(([label, value]) => ({ label, value }))
+                .sort((a, b) => b.value - a.value);
+        }
+
+        function buildCompletedTrend(jobs, days) {
+            // Buckets are UTC calendar days, matching how completed_at is stored
+            // (SQLite CURRENT_TIMESTAMP is UTC) - internally consistent, though
+            // that means "today" here is UTC-today, not the viewer's local today.
+            const counts = {};
+            const order = [];
+            const todayUtc = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+            for (let i = days - 1; i >= 0; i--) {
+                const d = new Date(todayUtc);
+                d.setUTCDate(d.getUTCDate() - i);
+                const key = d.toISOString().slice(0, 10);
+                counts[key] = 0;
+                order.push(key);
+            }
+            jobs.filter(j => j.status === 'completed' && j.completed_at).forEach(j => {
+                const key = j.completed_at.slice(0, 10);
+                if (key in counts) counts[key]++;
+            });
+            return order.map(key => {
+                const [, m, d] = key.split('-').map(Number);
+                return { label: `${m}/${d}`, value: counts[key] };
+            });
+        }
+
+        // --- Dashboard chart rendering (plain SVG, no chart library) ---
+        function niceChartStep(maxValue) {
+            if (maxValue <= 5) return 1;
+            if (maxValue <= 10) return 2;
+            if (maxValue <= 25) return 5;
+            if (maxValue <= 50) return 10;
+            if (maxValue <= 100) return 20;
+            return Math.ceil(maxValue / 50) * 10;
+        }
+
+        function positionChartTooltip(target) {
+            const tooltip = document.getElementById('chart-tooltip');
+            const rect = target.getBoundingClientRect();
+            let left = rect.left + rect.width / 2 - tooltip.offsetWidth / 2;
+            let top = rect.top - tooltip.offsetHeight - 8;
+            if (top < 4) top = rect.bottom + 8;
+            left = Math.max(4, Math.min(left, window.innerWidth - tooltip.offsetWidth - 4));
+            tooltip.style.left = `${left}px`;
+            tooltip.style.top = `${top}px`;
+        }
+
+        function showChartTooltip(target, label, value, unitLabel) {
+            const tooltip = document.getElementById('chart-tooltip');
+            tooltip.innerHTML = '';
+            const valueEl = document.createElement('div');
+            valueEl.className = 'chart-tooltip-value';
+            valueEl.textContent = unitLabel ? `${value} ${unitLabel}` : String(value);
+            const labelEl = document.createElement('div');
+            labelEl.className = 'chart-tooltip-label';
+            labelEl.textContent = label;
+            tooltip.appendChild(valueEl);
+            tooltip.appendChild(labelEl);
+            tooltip.style.display = 'block';
+            positionChartTooltip(target);
+        }
+
+        function hideChartTooltip() {
+            document.getElementById('chart-tooltip').style.display = 'none';
+        }
+
+        function wireChartTooltips(container) {
+            container.querySelectorAll('.chart-bar-group').forEach(group => {
+                const show = () => showChartTooltip(group, group.dataset.label, group.dataset.value, group.dataset.unit);
+                group.addEventListener('mouseenter', show);
+                group.addEventListener('focus', show);
+                group.addEventListener('mouseleave', hideChartTooltip);
+                group.addEventListener('blur', hideChartTooltip);
+            });
+        }
+
+        function renderHorizontalBarChart(containerId, data, opts) {
+            const container = document.getElementById(containerId);
+            if (!data.length) {
+                container.innerHTML = `<p class="chart-empty">${escapeHtml(opts.emptyText)}</p>`;
+                return;
+            }
+            const rowHeight = 34;
+            const labelWidth = 130;
+            const plotWidth = 380;
+            const rightPad = 40;
+            const topPad = 8;
+            const width = labelWidth + plotWidth + rightPad;
+            const height = data.length * rowHeight + topPad * 2;
+            const max = Math.max(...data.map(d => d.value), 1);
+
+            const rows = data.map((d, i) => {
+                const y = topPad + i * rowHeight;
+                const barHeight = rowHeight - 14;
+                const barY = y + (rowHeight - barHeight) / 2;
+                const barWidth = Math.max((d.value / max) * plotWidth, 3);
+                return `
+                    <g class="chart-bar-group" tabindex="0" data-label="${escapeHtml(d.label)}" data-value="${d.value}" data-unit="${escapeHtml(opts.unitLabel || '')}">
+                        <text x="${labelWidth - 10}" y="${y + rowHeight / 2}" text-anchor="end" dominant-baseline="middle" class="chart-cat-label">${escapeHtml(d.label)}</text>
+                        <rect x="${labelWidth}" y="${barY}" width="${barWidth}" height="${barHeight}" rx="4" class="chart-bar-fill"></rect>
+                        <text x="${labelWidth + barWidth + 8}" y="${y + rowHeight / 2}" dominant-baseline="middle" class="chart-value-label">${d.value}</text>
+                        <rect x="0" y="${y}" width="${width}" height="${rowHeight}" fill="transparent" class="chart-hit-area"></rect>
+                    </g>
+                `;
+            }).join('');
+
+            const baseline = `<line x1="${labelWidth}" y1="${topPad}" x2="${labelWidth}" y2="${height - topPad}" class="chart-baseline"></line>`;
+
+            container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="chart-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeHtml(opts.emptyText || '')}">${baseline}${rows}</svg>`;
+            wireChartTooltips(container);
+        }
+
+        function renderColumnChart(containerId, data, opts) {
+            const container = document.getElementById(containerId);
+            const colWidth = 30;
+            const gap = 8;
+            const leftPad = 30;
+            const bottomPad = 24;
+            const topPad = 20;
+            const plotHeight = 140;
+            const width = leftPad + data.length * (colWidth + gap);
+            const height = topPad + plotHeight + bottomPad;
+            const max = Math.max(...data.map(d => d.value), 0);
+            const step = niceChartStep(Math.max(max, 1));
+            const gridMax = Math.max(Math.ceil(max / step) * step, step);
+
+            const gridLines = [];
+            for (let v = 0; v <= gridMax; v += step) {
+                const y = topPad + plotHeight - (v / gridMax) * plotHeight;
+                gridLines.push(`<line x1="${leftPad}" y1="${y}" x2="${width}" y2="${y}" class="chart-grid-line"></line>`);
+                gridLines.push(`<text x="${leftPad - 8}" y="${y}" text-anchor="end" dominant-baseline="middle" class="chart-axis-label">${v}</text>`);
+            }
+
+            const cols = data.map((d, i) => {
+                const x = leftPad + i * (colWidth + gap);
+                const barHeight = gridMax > 0 ? (d.value / gridMax) * plotHeight : 0;
+                const y = topPad + plotHeight - barHeight;
+                const valueLabel = d.value > 0
+                    ? `<text x="${x + colWidth / 2}" y="${y - 6}" text-anchor="middle" class="chart-value-label">${d.value}</text>`
+                    : '';
+                const bar = d.value > 0
+                    ? `<rect x="${x}" y="${y}" width="${colWidth}" height="${Math.max(barHeight, 2)}" rx="4" class="chart-bar-fill"></rect>`
+                    : '';
+                return `
+                    <g class="chart-bar-group" tabindex="0" data-label="${escapeHtml(d.label)}" data-value="${d.value}" data-unit="${escapeHtml(opts.unitLabel || '')}">
+                        ${bar}${valueLabel}
+                        <text x="${x + colWidth / 2}" y="${topPad + plotHeight + 16}" text-anchor="middle" class="chart-axis-label">${escapeHtml(d.label)}</text>
+                        <rect x="${x - gap / 2}" y="0" width="${colWidth + gap}" height="${height}" fill="transparent" class="chart-hit-area"></rect>
+                    </g>
+                `;
+            }).join('');
+
+            const baseline = `<line x1="${leftPad}" y1="${topPad + plotHeight}" x2="${width}" y2="${topPad + plotHeight}" class="chart-baseline"></line>`;
+
+            container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="chart-svg" preserveAspectRatio="xMidYMid meet" role="img">${gridLines.join('')}${baseline}${cols}</svg>`;
+            wireChartTooltips(container);
         }
 
         document.getElementById('restore-backup-form').addEventListener('submit', async (e) => {
