@@ -1363,6 +1363,22 @@
         loadParts();
         loadOperations();
         loadProducts();
+
+        // AUTO-REFRESH
+        // Only for the tabs that are pure read-and-act displays (job status,
+        // stats) - not Parts/Operations/Products, whose forms (the product
+        // form's operation checklist, the BOM builder) would lose whatever the
+        // user is mid-way through building if their dropdowns got rebuilt out
+        // from under them every few seconds.
+        const AUTO_REFRESH_LOADERS = { work: loadWork, jobs: loadJobs, dashboard: loadDashboard };
+        const AUTO_REFRESH_MS = 5000;
+
+        setInterval(() => {
+            if (document.hidden) return; // don't poll a backgrounded/minimized tab
+            const activeTab = document.querySelector('.tab-btn.active');
+            const loader = activeTab && AUTO_REFRESH_LOADERS[activeTab.dataset.tab];
+            if (loader) loader();
+        }, AUTO_REFRESH_MS);
     </script>
 </body>
 </html>
