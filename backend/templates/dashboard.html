@@ -165,7 +165,20 @@
         .settings-unlock-bar p {
             color: #666;
         }
-        
+
+        .action-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .action-row p {
+            color: #666;
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -660,6 +673,11 @@
             <div class="form-group">
                 <label>Search by Name or Description</label>
                 <input type="text" id="parts-search" placeholder="e.g., motor, wiring, frame...">
+            </div>
+
+            <div class="action-row">
+                <p>Need to clear out the inventory instead of deleting parts one by one?</p>
+                <button type="button" class="secondary" id="delete-all-parts">Delete All Parts</button>
             </div>
 
             <div class="table-container">
@@ -1418,7 +1436,23 @@
                 showMessage('parts', `Error: ${error.error}`, 'error');
             }
         });
-        
+
+        document.getElementById('delete-all-parts').addEventListener('click', async () => {
+            if (!confirm('Delete ALL parts? This removes every part in the inventory, including their stock levels and history, and drops them from any product\'s parts list. This cannot be undone.')) return;
+
+            const response = await fetch(`${API_BASE}/parts`, { method: 'DELETE' });
+            if (response.ok) {
+                const result = await response.json();
+                showMessage('parts', `Deleted ${result.count} part${result.count === 1 ? '' : 's'}`, 'success');
+                loadParts();
+                loadDashboard();
+                loadProducts();
+            } else {
+                const error = await response.json();
+                showMessage('parts', `Error: ${error.error}`, 'error');
+            }
+        });
+
         // OPERATIONS
         async function loadOperations() {
             const response = await fetch(`${API_BASE}/operations`);

@@ -143,6 +143,20 @@ def delete_part(part_id):
     conn.close()
     return jsonify({'status': 'deleted'})
 
+@app.route('/api/parts', methods=['DELETE'])
+def delete_all_parts():
+    """Delete every part at once, along with their product/audit references."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM parts")
+    count = c.fetchone()[0]
+    c.execute("DELETE FROM product_parts")
+    c.execute("DELETE FROM audit_log WHERE part_id IS NOT NULL")
+    c.execute("DELETE FROM parts")
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'deleted', 'count': count})
+
 # --- OPERATIONS ---
 @app.route('/api/operations', methods=['GET'])
 def get_operations():
